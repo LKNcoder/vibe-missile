@@ -1,0 +1,4643 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>U R A Missile</title>
+   
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Quantico:wght@400;700&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        canvas {
+            display: block;
+        }
+        #startMenu, #gameOverScreen {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        text-align: center;
+        color: white;
+        background-color: rgba(0, 0, 0, 0.85);
+        padding: 40px;
+        border-radius: 8px;
+        z-index: 100;
+        width: 450px;
+        box-shadow: 0 0 40px rgba(255, 0, 0, 0.3), 
+                    inset 0 0 20px rgba(255, 0, 0, 0.2);
+        border: 2px solid #444;
+        font-family: 'Quantico', sans-serif;
+    }
+
+    #startMenu h1, #gameOverScreen h2 {
+        font-family: 'Black Ops One', cursive;
+        font-size: 42px;
+        text-transform: uppercase;
+        margin-top: 0;
+        margin-bottom: 20px;
+        text-shadow: 0 0 10px rgba(255, 0, 0, 0.7);
+        letter-spacing: 2px;
+    }
+    
+    #gameOverScreen h2 {
+        font-size: 46px;
+        color: #ff3333;
+    }
+    
+    #startMenu p {
+        font-size: 18px;
+        margin-bottom: 30px;
+        line-height: 1.6;
+    }
+
+    #gameOverStats {
+        font-size: 20px;
+        margin: 30px 0;
+        text-align: left;
+        padding: 15px;
+        background-color: rgba(0, 0, 0, 0.4);
+        border-left: 4px solid #ff3333;
+    }
+
+    #launchButton, #restartButton {
+        background-color: #ff1a1a;
+        color: white;
+        border: none;
+        padding: 15px 40px;
+        font-size: 24px;
+        cursor: pointer;
+        border-radius: 5px;
+        margin-top: 10px;
+        transition: all 0.3s;
+        font-family: 'Black Ops One', cursive;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        position: relative;
+        box-shadow: 0 5px 15px rgba(255, 0, 0, 0.4);
+    }
+    
+    #launchButton:hover, #restartButton:hover {
+        background-color: #ff0000;
+        transform: translateY(-3px) scale(1.05);
+        box-shadow: 0 8px 20px rgba(255, 0, 0, 0.6);
+    }
+    
+    #launchButton:active, #restartButton:active {
+        transform: translateY(2px);
+    }
+    
+    /* Add decorative elements to the UI */
+    #startMenu:before, #gameOverScreen:before {
+        content: "";
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        right: 10px;
+        bottom: 10px;
+        border: 1px dashed rgba(255, 255, 255, 0.3);
+        pointer-events: none;
+    }
+    
+    /* Add military corner decorations */
+    .corner-decoration {
+        position: absolute;
+        width: 30px;
+        height: 30px;
+        border: 3px solid #ff3333;
+        opacity: 0.7;
+    }
+    
+    .top-left {
+        top: 10px;
+        left: 10px;
+        border-right: none;
+        border-bottom: none;
+    }
+    
+    .top-right {
+        top: 10px;
+        right: 10px;
+        border-left: none;
+        border-bottom: none;
+    }
+    
+    .bottom-left {
+        bottom: 10px;
+        left: 10px;
+        border-right: none;
+        border-top: none;
+    }
+    
+    .bottom-right {
+        bottom: 10px;
+        right: 10px;
+        border-left: none;
+        border-top: none;
+    }
+        
+        #hud {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            font-family: monospace;
+            font-size: 16px;
+            background-color: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            border-radius: 5px;
+            display: none;
+            text-shadow: 1px 1px 2px black;
+        }
+        #minimap {
+            position: absolute;
+            bottom: 50px;
+            right: 20px;
+            width: 450px;
+            height: 450px;
+            background-color: rgba(0, 0, 0, 0.5);
+            border-radius: 5px;
+            border: 2px solid #000; /* Add a thin black border */
+            display: none;
+            overflow: hidden;
+        }
+
+        
+
+
+#controlsOverlay {
+    position: absolute;
+    bottom: 50px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: white;
+    padding: 20px;
+    text-align: center;
+    z-index: 100;
+    font-family: 'Quantico', sans-serif;
+    opacity: 0;
+    transition: opacity 0.5s;
+    max-width: 600px;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8), 
+                 0 0 10px rgba(0, 0, 0, 0.7);
+    font-size: 20px;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+}
+
+#controlsOverlay h3 {
+    margin-top: 0;
+    color: #ff3333;
+}
+
+.control-row {
+    display: flex;
+    justify-content: space-between;
+    margin: 10px 0;
+}
+
+.key {
+    background-color: #333;
+    padding: 5px 10px;
+    border-radius: 5px;
+    margin-right: 10px;
+    border: 1px solid #555;
+    font-family: monospace;
+    font-weight: bold;
+}
+
+#colorButtons {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: 350px;
+    margin-bottom: 15px;
+    gap: 12px; /* Increased gap to prevent overlap */
+    position: relative; /* Create stacking context */
+}
+
+.color-button {
+    width: 30px;
+    height: 30px;
+    border-radius: 5px;
+    cursor: pointer;
+    border: 2px solid #333;
+    transition: transform 0.2s, border-color 0.2s;
+    transform-origin: center center; /* Ensure transform from center */
+    position: relative; /* Keep position context */
+    z-index: 1; /* Start with lower z-index */
+}
+
+.color-button:hover {
+    transform: scale(1.15);
+    z-index: 100; /* Much higher when hovered to ensure it's above others */
+}
+
+.color-button.selected {
+    border-color: #ffffff;
+    box-shadow: 0 0 8px rgba(255, 255, 255, 0.8);
+    z-index: 50; /* Higher than regular but lower than hovered */
+}
+
+#missilePreviewContainer {
+    width: 200px;
+    height: 200px;
+    background-color: rgba(0, 0, 0, 0.3);
+    border-radius: 5px;
+    margin: 15px 0;
+    position: relative;
+    box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.5);
+}
+
+#missilePreview {
+    width: 280px; 
+    height: 200px;
+    margin: 10px auto;
+    position: relative; /* Ensure renderer gets properly placed */
+}
+
+#colorButtons {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: 350px;
+    margin-bottom: 15px;
+    gap: 6px; /* Use gap instead of margins for better spacing */
+}
+
+.color-button {
+    width: 30px;
+    height: 30px;
+    border-radius: 5px;
+    cursor: pointer;
+    border: 2px solid #333;
+    transition: transform 0.2s, border-color 0.2s;
+    position: relative; /* Ensure position context for z-index */
+    z-index: 10; /* Higher z-index to ensure clickability */
+}
+
+.color-button:hover {
+    transform: scale(1.15);
+    z-index: 20; /* Even higher when hovered */
+}
+
+.color-button.selected {
+    border-color: #ffffff;
+    box-shadow: 0 0 8px rgba(255, 255, 255, 0.8);
+    z-index: 15; /* Higher than regular buttons but lower than hovered */
+}
+       
+    </style>
+</head>
+<body>
+    
+    
+    <div id="minimap"></div>
+    <div id="hud"></div>
+
+    <div id="gameOverScreen" style="display: none;">
+        <div class="corner-decoration top-left"></div>
+        <div class="corner-decoration top-right"></div>
+        <div class="corner-decoration bottom-left"></div>
+        <div class="corner-decoration bottom-right"></div>
+        
+        <h2>Mission Complete!</h2>
+        <div id="gameOverStats"></div>
+        <button id="restartButton" onclick="restartGame()">RELAUNCH!</button>
+    </div>
+
+    <div id="controlsOverlay">
+        USE ARROW KEYS TO MANEUVER • SPACE TO ACCELERATE
+    </div>
+
+    <!-- Vibe Jam link  -->
+    <a target="_blank" href="https://jam.pieter.com" style="font-family: 'system-ui', sans-serif; position: fixed; bottom: -1px; right: -1px; padding: 7px; font-size: 14px; font-weight: bold; background: #fff; color: #000; text-decoration: none; z-index: 10; border-top-left-radius: 12px; z-index: 10000; border: 1px solid #fff;">🕹️ Vibe Jam 2025</a>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+
+    <script>
+        // Game variables
+        let scene, camera, renderer, missile, city;
+        let buildings = [], targetBuildings = [];
+        let gameActive = false;
+        let startTime, elapsedTime = 0;
+        let flightTimes = [], avgFlightTime = 0;
+        let targetsDestroyed = 0, crashes = 0;
+        let smokeParticles = [];
+        let minimapCamera, minimapRenderer;
+        let cameraOffset = new THREE.Vector3(0, 5, 15);
+        let velocity = 0.6;
+        let acceleration = 0.5;
+        let maxVelocity = 6.0;
+        let baseVelocity = 0.6;
+        let isAccelerating = false;
+        let turnSpeed = 0.05;
+        let damping = 0.9;
+        let turnVelocity = new THREE.Vector3(0, 0, 0);
+        let missileDirection = new THREE.Vector3(0, 0, -1);
+        let citySize = 400;
+        let buildingCount = 200;
+        let targetPercentage = 0.03;
+        let explosionParticles = [];
+        let spawnPoints = [
+            new THREE.Vector3(0, 50, citySize * 2),    // North
+            new THREE.Vector3(0, 50, -citySize * 2),   // South
+            new THREE.Vector3(citySize * 2, 50, 0),    // East
+            new THREE.Vector3(-citySize * 2, 50, 0)    // West
+        ];
+        let currentSpawnPoint;
+        let screenShakeTime = 0;
+        let screenShakeIntensity = 0;
+        let clock = new THREE.Clock();
+        let resetDelay = 0;
+        let cameraTarget = null;
+        let cameraUp = new THREE.Vector3(0, 1, 0); // Keep track of camera's up vector
+        let prevCameraPosition = new THREE.Vector3();
+        let prevMissileDirection = new THREE.Vector3(0, 0, -1);
+        let launchAnimation = false;
+        let launchAnimationTime = 0;
+        const launchAnimationDuration = 2.0;
+        let enemyMissiles = [];
+        const maxEnemyMissiles = 5; // Maximum concurrent enemy missiles
+        const enemyMissileSpawnRate = 3; // New enemy missile every 3 seconds
+        let enemyMissileTimer = 0;
+        let scorchMarks = [];
+        let score = 0;
+        let playerMarker; // For minimap visibility
+        let animationFrameId; // For smoother animation
+        let lastTime = 0; // For frame timing
+        let minimapBuildingDots = [];
+        let smoothedCameraPosition = new THREE.Vector3();
+        let smoothedCameraLookAt = new THREE.Vector3();
+        const cameraSmoothingFactor = 0.08; // Lower = smoother but slower
+        let initialMissileAngle = 0;
+        let minimapContainer;
+        let exhaustGlow = null;
+        let globalScorchTimer = null;
+        let globalScorchInterval = 100; // milliseconds
+        let scorchCleanupCounter = 0;
+        let damagedBuildings = [];
+
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        
+        const MAX_SMOKE_PARTICLES = isMobile ? 3000 : 10000; 
+        const MAX_EXPLOSION_PARTICLES = isMobile ? 5000 : 20000;
+
+        const tempVector1 = new THREE.Vector3();
+        const tempVector2 = new THREE.Vector3();
+        const tempVec3 = new THREE.Vector3();
+        const tempVec4 = new THREE.Vector3();
+        const tempVec5 = new THREE.Vector3();
+        const tempQuat = new THREE.Quaternion();
+        const reusableBox = new THREE.Box3();
+        const reusableVec1 = new THREE.Vector3();
+        const reusableVec2 = new THREE.Vector3();
+        const minimapDotPool = {
+    target: [],     // Pool for target dots
+    regular: [],    // Pool for regular building dots
+    geometryTarget: new THREE.CircleGeometry(4, 8),   // Reuse geometries
+    geometryRegular: new THREE.CircleGeometry(2, 8),
+    materialTarget: new THREE.MeshBasicMaterial({ color: 0xff0000 }),  // Reuse materials
+    materialRegular: new THREE.MeshBasicMaterial({ color: 0xffffff })
+    };
+    const cameraShakeOffset = new THREE.Vector3();
+    const missileBackVector = new THREE.Vector3();
+
+    let globalSmokeTimer = 0;
+    const globalSmokeInterval = 0.2; // How often to check for smoke emission (seconds)
+    const globalSmokeChance = 0.7; // Base probability for emitting smoke
+    let globalWindDirection = new THREE.Vector3(0.3, 0, 0.2); // Shared wind direction
+   
+    const sounds = {
+    explosion: null,
+    missile: null,
+    target: null,
+    crash: null,
+    flight1: null,
+    flight2: null,
+    ui: null,
+    muted: false
+    };
+
+    const explosionMaterialPool = {
+    yellow: null,
+    orange: null, 
+    red: null
+    };
+
+    const enemyExplosionMaterialPool = {
+    yellow: null,
+    orange: null,
+    red: null
+};
+        
+
+        // Input state
+        const keys = {
+            ArrowUp: false,
+            ArrowDown: false,
+            ArrowLeft: false,
+            ArrowRight: false,
+            Space: false,
+            KeyW: false,
+            KeyS: false
+        };
+
+        // Game stats
+        const stats = {
+            targetsRemaining: 0,
+            targetsDestroyed: 0,
+            crashes: 0,
+            flightTime: 0
+        };
+
+    // Preload sound effects
+    function initSounds() {
+    // Load all sound effects
+    sounds.explosion = new Audio('explosion.mp3');
+    sounds.missile = new Audio('missile.mp3');
+    sounds.missile2 = new Audio('missile2.mp3');
+    sounds.target = new Audio('target.mp3');
+    sounds.crash = new Audio('crash.mp3');
+    sounds.ui = new Audio('ui.mp3');
+    sounds.flight1 = new Audio('flight1.mp3');
+    sounds.flight1.loop = true;  
+    sounds.flight1.volume = 0.4;
+    sounds.flight2 = new Audio('flight2.mp3');
+    sounds.flight2.loop = true;  
+    sounds.flight2.volume = 0.5;
+    
+    // Set all to low volume initially
+    Object.values(sounds).forEach(sound => {
+        if (sound && sound.volume) sound.volume = 0.5;
+    });
+    
+    // Add mute toggle button 
+    const muteButton = document.createElement('button');
+    muteButton.innerHTML = '🔊';
+    muteButton.style.position = 'absolute';
+    muteButton.style.top = '10px';
+    muteButton.style.right = '10px';
+    muteButton.style.padding = '5px 10px';
+    muteButton.style.background = 'rgba(0,0,0,0.5)';
+    muteButton.style.color = 'white';
+    muteButton.style.border = 'none';
+    muteButton.style.borderRadius = '5px';
+    muteButton.style.cursor = 'pointer';
+    muteButton.style.zIndex = '1000';
+    
+    muteButton.addEventListener('click', () => {
+        toggleMute();
+        muteButton.innerHTML = sounds.muted ? '🔇' : '🔊';
+    });
+    
+    document.body.appendChild(muteButton);
+}
+
+// Play sound with error handling
+function playSound(soundName) {
+    if (sounds.muted) return;
+    
+    const sound = sounds[soundName];
+    if (!sound) return;
+    
+    // Reset sound to beginning if it's still playing
+    sound.pause();
+    sound.currentTime = 0;
+    
+    // Play the sound with a catch for autoplay restrictions
+    const playPromise = sound.play();
+    if (playPromise !== undefined) {
+        playPromise.catch(error => {
+            console.log("Audio play prevented by browser:", error);
+        });
+    }
+}
+
+function startFlightSound() {
+    if (sounds.muted) return;
+    
+    // Start with normal flight sound
+    sounds.flight1.currentTime = 0;
+    sounds.flight1.play().catch(e => console.log("Couldn't play flight sound:", e));
+    sounds.currentLoop = "flight1";
+}
+
+function stopFlightSounds() {
+    // Stop all flight sounds
+    sounds.flight1.pause();
+    sounds.flight1.currentTime = 0;
+    sounds.flight2.pause();
+    sounds.flight2.currentTime = 0;
+    sounds.currentLoop = null;
+}
+
+function updateFlightSound(isAccelerating) {
+    if (sounds.muted) return;
+    
+    if (!window.flightSoundPool) {
+        initFlightSoundPool();
+    }
+    
+    // Choose appropriate sound pool
+    const soundType = isAccelerating ? 'flight2' : 'flight1';
+    
+    // If we're already playing the right type, continue
+    if (sounds.currentLoop === soundType) return;
+    
+    // Get next sound from the appropriate pool
+    window.currentFlightIndex = (window.currentFlightIndex + 1) % window.flightSoundPool[soundType].length;
+    const nextSound = window.flightSoundPool[soundType][window.currentFlightIndex];
+    
+    // Cross-fade (start new sound before stopping old)
+    nextSound.currentTime = 0;
+    nextSound.play().catch(e => {});
+    
+    // Stop other sounds after a short delay
+    setTimeout(() => {
+        if (soundType === 'flight1') {
+            window.flightSoundPool.flight2.forEach(s => { s.pause(); s.currentTime = 0; });
+        } else {
+            window.flightSoundPool.flight1.forEach(s => { s.pause(); s.currentTime = 0; });
+        }
+    }, 50);
+    
+    sounds.currentLoop = soundType;
+}
+
+// Toggle mute state
+function toggleMute() {
+    sounds.muted = !sounds.muted;
+    
+    if (sounds.muted) {
+        stopFlightSounds();
+    } else if (gameActive && missile.visible && !launchAnimation && resetDelay <= 0) {
+        // Resume the appropriate flight sound
+        updateFlightSound(isAccelerating);
+    }
+}
+
+// Track selected missile color
+let selectedMissileColor = "#ff3333"; // Default red color
+
+// Initialize color picker
+function initColorPicker() {
+    const colors = [
+        // Reds
+        // Reds
+        "#ff0000", "#ff3333", "#ff6666", "#cc0000", 
+        // Oranges/Yellows
+        "#ff8800", "#ffaa00", "#ffcc00", "#ffff00", 
+        // Greens
+        "#00cc00", "#00ff00", "#33ff33", 
+        // Blues
+        "#0000ff", "#3333ff", "#0099ff", 
+        // Purples (expanded selection)
+        "#6600cc", "#9900ff", "#cc00ff", "#8800cc", "#aa00ee",
+        // Pinks (new section)
+        "#ff00ff", "#ff66ff", "#ff99ff", "#ff3399", "#cc0099",
+        // Grayscale/Special
+        "#ffffff", "#aaaaaa", "#000000", "#00ffff"
+    ];
+    
+    const colorButtonsContainer = document.getElementById('colorButtons');
+    colorButtonsContainer.innerHTML = ''; // Clear any existing buttons
+
+    // Create color buttons
+    colors.forEach((color) => {
+        const button = document.createElement('div');
+        button.className = 'color-button';
+        button.style.backgroundColor = color;
+        
+        // Select button if it's the default color
+        if (color === selectedMissileColor) {
+            button.classList.add('selected');
+        }
+        
+         // Use more reliable click event instead of mousedown
+          button.addEventListener('click', function(e) {
+            e.stopPropagation(); // Stop event bubbling
+            
+            // Remove selection from all buttons
+            document.querySelectorAll('.color-button').forEach(btn => {
+                btn.classList.remove('selected');
+            });
+            
+            // Add selection to clicked button
+            this.classList.add('selected');
+            
+            // Update selected color
+            selectedMissileColor = color;
+            
+            // Update missile preview
+           // updateMissilePreviewColor(color); // skip update missile preview
+        });
+
+        // Also handle touch events for mobile
+        button.addEventListener('touchstart', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            // Same logic as mousedown
+            document.querySelectorAll('.color-button').forEach(btn => {
+                btn.classList.remove('selected');
+            });
+            this.classList.add('selected');
+            selectedMissileColor = color;
+          //   updateMissilePreviewColor(color);  /skip update missile preview
+        }, {passive: false});
+
+        colorButtonsContainer.appendChild(button);
+    });
+    
+    // Set up 3D missile preview
+   
+}
+
+
+
+
+
+
+// Show and hide controls overlay
+function showControlsOverlay() {
+    const overlay = document.getElementById('controlsOverlay');
+    
+    // Show device-appropriate controls
+    if (isMobile) {
+        overlay.innerHTML = 'TILT DEVICE TO STEER • TAP SCREEN TO ACCELERATE';
+    } else {
+        overlay.innerHTML = 'USE ARROW KEYS TO MANEUVER • SPACE TO ACCELERATE';
+    }
+    
+    overlay.style.opacity = "1";
+    
+    // Hide after launch animation completes + extended time
+    setTimeout(() => {
+        hideControlsOverlay();
+    }, 6000);
+}
+
+
+// initialize mobile controls
+function initMobileControls() {
+    if (!isMobile) return;
+    
+    // Clear any existing touch listeners
+    renderer.domElement.removeEventListener('touchstart', handleTouchStart);
+    renderer.domElement.removeEventListener('touchend', handleTouchEnd);
+    
+    // Add tap event listener to toggle acceleration
+    renderer.domElement.addEventListener('touchstart', handleTouchStart, { passive: false });
+    renderer.domElement.addEventListener('touchend', handleTouchEnd, { passive: false });
+    
+    // Show mobile instructions
+    document.getElementById('controlsOverlay').innerHTML = 
+        'TILT DEVICE TO STEER • TAP SCREEN TO ACCELERATE';
+    document.getElementById('controlsOverlay').style.opacity = "1";
+    setTimeout(() => {
+        document.getElementById('controlsOverlay').style.opacity = "0";
+    }, 5000);
+}
+
+function handleTouchStart(e) {
+    e.preventDefault();
+    isAccelerating = true;
+    updateFlightSound(true);
+}
+
+function handleTouchEnd(e) {
+    e.preventDefault();
+    isAccelerating = false;
+    updateFlightSound(false);
+}
+
+ // Initialize the game
+ init();
+
+ // 1. Remove the startMenu display toggle in init()
+function init() {
+    // Initialize sounds
+    initSounds();
+    initSoundPool();
+
+    // Set up the scene
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x87CEEB);  // Sky blue
+    scene.fog = new THREE.FogExp2(0x87CEEB, 0.0015);
+
+    THREE.Object3D.DefaultUp.set(0, 1, 0);
+
+    // Set up the renderer
+    renderer = new THREE.WebGLRenderer({ 
+        antialias: true,
+        powerPreference: "high-performance", // Request high-performance GPU
+        precision: "mediump" // Use medium precision shaders on mobile
+    });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = false;
+    renderer.sortObjects = false;
+    document.body.appendChild(renderer.domElement);
+
+    // Add lights
+    const ambientLight = new THREE.AmbientLight(0x404040, 1);
+    scene.add(ambientLight);
+
+    // Improve directional light for better shadows
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+    directionalLight.position.set(200, 300, 100);
+    directionalLight.castShadow = false;
+    
+    // Increase shadow map size for more detailed shadows
+    directionalLight.shadow.mapSize.width = 1024;
+    directionalLight.shadow.mapSize.height = 1024;
+    
+    // Add shadow bias to reduce shadow acne
+    directionalLight.shadow.bias = -0.001;
+    
+    scene.add(directionalLight);
+
+    // Create the terrain
+    createTerrain();
+       
+    // Create the city
+    createCity();
+    
+    // Set up the minimap
+    setupMinimap();
+ 
+    // Create the missile
+    createMissile();
+
+    initExplosionTextures(); // Initialize explosion textures once
+    initEnemyExplosionMaterials(); // Initialize enemy explosion materials
+    
+    // Event listeners
+    window.addEventListener('resize', onWindowResize);
+    document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('keyup', onKeyUp);
+    
+    // Mobile device orientation controls
+    if (window.DeviceOrientationEvent) {
+        window.addEventListener('deviceorientation', handleDeviceOrientation);
+    }
+
+    if (isMobile) {
+        optimizeForMobile();
+        
+        // Replace standard control instructions
+        if (document.getElementById('controlsOverlay')) {
+            document.getElementById('controlsOverlay').innerHTML = 
+                'TILT DEVICE TO STEER • TAP SCREEN TO ACCELERATE';
+        }
+        
+        // Set up mobile-specific game properties
+        baseVelocity = 0.5; // Slower base speed for easier control
+        turnSpeed *= 0.8; // Gentler turns
+        damping = 0.8; // More damping for smoother controls
+        
+        // Disable or simplify heavy effects
+        MAX_SMOKE_PARTICLES = 2000;
+        MAX_EXPLOSION_PARTICLES = 5000;
+    }
+    
+    // Create camera with proper perspective
+    camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    
+    // Initialize game directly - no start menu
+    document.getElementById('hud').style.display = 'block';
+    document.getElementById('minimap').style.display = 'block';
+    createHudElements();
+    gameActive = true;
+    resetMissile();
+    
+    // Skip launch animation
+    launchAnimation = false;
+    velocity = baseVelocity;
+    
+    // Set up camera position immediately
+    const cameraPos = missile.position.clone().sub(
+        missileDirection.clone().multiplyScalar(cameraOffset.z)
+    );
+    cameraPos.y += cameraOffset.y;
+    camera.position.copy(cameraPos);
+    camera.lookAt(missile.position);
+    smoothedCameraPosition.copy(camera.position);
+    smoothedCameraLookAt.copy(missile.position);
+    
+    // Show controls briefly to inform player
+    document.getElementById('controlsOverlay').innerHTML = 'USE ARROW KEYS TO MANEUVER • SPACE TO ACCELERATE';
+    showControlsOverlay();
+    
+    // Start sounds
+    playSound('missile');
+    startFlightSound();
+
+    renderer.domElement.addEventListener('webglcontextlost', function(event) {
+        event.preventDefault();
+        console.error('WebGL context lost. Attempting recovery...');
+       
+        // Clean up resources to help recovery
+        for (let i = smokeParticles.length - 1; i >= 0; i--) {
+            disposeObject(smokeParticles[i]);
+        }
+        smokeParticles = [];
+        
+        for (let i = explosionParticles.length - 1; i >= 0; i--) {
+            disposeObject(explosionParticles[i]);
+        }
+        explosionParticles = [];
+        
+        // Alert user
+        alert("Graphics context lost. Try refreshing the page.");
+    }, false);
+
+    renderer.domElement.addEventListener('webglcontextrestored', function() {
+        console.log('WebGL context restored!');
+        lastTime = 0;
+        requestAnimationFrame(animate);
+    }, false);
+
+    // Start animation loop
+    lastTime = 0; // Reset lastTime
+    requestAnimationFrame(animate);
+}    
+
+function optimizeForMobile() {
+    if (!isMobile) return;
+    
+    // Set up full screen button
+    const fullscreenBtn = document.createElement('button');
+    fullscreenBtn.innerHTML = '📱 Full Screen';
+    fullscreenBtn.style.position = 'absolute';
+    fullscreenBtn.style.top = '50%';
+    fullscreenBtn.style.left = '50%';
+    fullscreenBtn.style.transform = 'translate(-50%, -50%)';
+    fullscreenBtn.style.zIndex = '2000';
+    fullscreenBtn.style.padding = '15px 25px';
+    fullscreenBtn.style.fontSize = '18px';
+    fullscreenBtn.style.backgroundColor = '#ff3333';
+    fullscreenBtn.style.color = 'white';
+    fullscreenBtn.style.border = 'none';
+    fullscreenBtn.style.borderRadius = '5px';
+    
+    fullscreenBtn.addEventListener('click', function() {
+        // Request fullscreen
+        if (document.documentElement.requestFullscreen) {
+            document.documentElement.requestFullscreen();
+        } else if (document.documentElement.webkitRequestFullscreen) {
+            document.documentElement.webkitRequestFullscreen();
+        } else if (document.documentElement.msRequestFullscreen) {
+            document.documentElement.msRequestFullscreen();
+        }
+        
+        // Request device orientation permission and enable controls
+        if (typeof DeviceOrientationEvent !== 'undefined' && 
+            typeof DeviceOrientationEvent.requestPermission === 'function') {
+            
+            DeviceOrientationEvent.requestPermission()
+                .then(response => {
+                    if (response === 'granted') {
+                        window.addEventListener('deviceorientation', handleDeviceOrientation);
+                        initMobileControls();
+                    }
+                })
+                .catch(console.error);
+        } else {
+            window.addEventListener('deviceorientation', handleDeviceOrientation);
+            initMobileControls();
+        }
+        
+        // Hide button after clicked
+        this.style.display = 'none';
+        
+        // Lock screen to landscape if possible
+        if (screen.orientation && screen.orientation.lock) {
+            screen.orientation.lock('landscape').catch(err => console.log(err));
+        }
+    });
+    
+    document.body.appendChild(fullscreenBtn);
+    
+    // Scale down HUD and minimap
+    const hud = document.getElementById('hud');
+    const minimap = document.getElementById('minimap');
+    
+    if (hud) {
+        hud.style.fontSize = '12px';
+        hud.style.padding = '8px';
+        hud.style.maxWidth = '30%';
+    }
+    
+    if (minimap) {
+        minimap.style.width = '120px';
+        minimap.style.height = '120px';
+        minimap.style.bottom = '60px';
+        minimap.style.right = '10px';
+        
+        // Update minimap renderer size
+        if (minimapRenderer) {
+            minimapRenderer.setSize(120, 120);
+        }
+    }
+}
+
+
+        function initSoundPool() {
+    // Create pre-loaded pool of audio elements
+    window.explosionSoundPool = [];
+    const poolSize = 5;
+    
+    for (let i = 0; i < poolSize; i++) {
+        const sound = new Audio('explosion.mp3');
+        sound.volume = 0.2;
+        sound.preload = 'auto';
+        window.explosionSoundPool.push(sound);
+    }
+    
+    window.explosionSoundIndex = 0;
+    }        
+
+        // Add this function to create a custom material for explosion particles
+// Update the createExplosionShaderMaterial function
+function createExplosionShaderMaterial(texture, color) {
+    return new THREE.ShaderMaterial({
+        uniforms: {
+            map: { value: texture },
+            color: { value: new THREE.Color(color) },
+            opacity: { value: 1.0 },
+            time: { value: 0.0 } // Add time uniform for animation
+        },
+        vertexShader: `
+            varying vec2 vUv;
+            
+            void main() {
+                vUv = uv;
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+        `,
+        fragmentShader: `
+            uniform sampler2D map;
+            uniform vec3 color;
+            uniform float opacity;
+            uniform float time;
+            
+            varying vec2 vUv;
+            
+            void main() {
+                vec4 texColor = texture2D(map, vUv);
+                
+                // Add subtle flicker to the fire
+                float flicker = sin(time * 10.0) * 0.05 + 0.95;
+                
+                // Enhance reds and yellows, reduce blues
+                vec3 adjustedColor = color * texColor.rgb;
+                adjustedColor.r *= 1.1; // Boost red channel
+                adjustedColor.b *= 0.7; // Reduce blue channel
+                
+                gl_FragColor = vec4(adjustedColor * flicker, texColor.a * opacity);
+            }
+        `,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        side: THREE.DoubleSide
+    });
+}
+
+        function createHudElements() {
+    // Create HUD elements if they don't exist
+    const hud = document.getElementById('hud');
+    if (!hud) return;
+    
+    // Clear any existing content
+    hud.innerHTML = `
+        
+        <div class="hud-row"><span>Targets Remaining:</span> <span id="targetsRemaining">0</span></div>
+        <div class="hud-row"><span>Targets Destroyed:</span> <span id="targetsDestroyed">0</span></div>
+        <div class="hud-row"><span>Crashes:</span> <span id="crashes">0</span></div>
+        <div class="hud-row"><span>Flight Time:</span> <span id="flightTime">0.0</span>s</div>
+        <div class="hud-row"><span>Avg Flight Time:</span> <span id="avgFlightTime">0.0</span>s</div>
+        <div class="hud-row"><span>Direction:</span> <span id="direction">N/A</span></div>
+        <div class="hud-row"><span>Altitude:</span> <span id="altitude">0</span>m</div>
+        <div class="hud-row"><span>Speed:</span> <span id="speed">0</span> km/h</div>
+        <div class="hud-row score"><span>Score:</span> <span id="score">0</span></div>
+    `;
+
+    // Add some CSS for the HUD
+    const style = document.createElement('style');
+    style.textContent = `
+        #hud {
+            font-family: 'Quantico', sans-serif;
+            padding: 15px;
+            background-color: rgba(0, 0, 0, 0.7);
+            border: 1px solid #ff3333;
+            border-radius: 5px;
+            color: white;
+            min-width: 200px;
+        }
+        .hud-row {
+            margin: 5px 0;
+            display: flex;
+            justify-content: space-between;
+        }
+        .hud-row span:first-child {
+            margin-right: 15px;
+            color: #aaaaaa;
+        }
+        .score {
+            margin-top: 15px;
+            padding-top: 10px;
+            border-top: 1px solid #444;
+            font-weight: bold;
+            font-size: 1.2em;
+        }
+        #score {
+            color: #ff3333;
+        }
+        #direction, #speed, #altitude {
+            color: #66ccff;
+        }
+        #enemyCount {
+            color: #ff6666;
+        }
+    `;
+    document.head.appendChild(style);
+}       
+
+    function disposeObject(object) {
+    if (!object) return;
+    
+    // Dispose of geometry
+    if (object.geometry) {
+        object.geometry.dispose();
+    }
+    
+    // Dispose of material(s) and their textures
+    if (object.material) {
+        if (Array.isArray(object.material)) {
+            object.material.forEach(material => {
+                // Handle shader materials
+                if (material.isShaderMaterial && material.uniforms.map && 
+                    material.uniforms.map.value) {
+                    // Don't dispose shared textures (we're still using them elsewhere)
+                }
+                material.dispose();
+            });
+        } else {
+            // Handle shader materials
+            if (object.material.isShaderMaterial && object.material.uniforms.map && 
+                object.material.uniforms.map.value) {
+                // Don't dispose shared textures (we're still using them elsewhere)
+            }
+            object.material.dispose();
+        }
+    }
+    
+    // Recursively dispose children if it's a group
+    if (object.children && object.children.length > 0) {
+        for (let i = object.children.length - 1; i >= 0; i--) {
+            disposeObject(object.children[i]);
+        }
+    }
+    
+    // Remove from parent
+    if (object.parent) {
+        object.parent.remove(object);
+    }
+}
+
+// Add mobile optimizations
+if (isMobile) {
+    // Reduce quality on mobile
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1));
+    directionalLight.shadow.mapSize.width = 512;
+    directionalLight.shadow.mapSize.height = 512;
+    
+    // Reduce particle counts
+    const MAX_SMOKE_PARTICLES = 5000;
+    const MAX_EXPLOSION_PARTICLES = 10000;
+    
+    // Lower city complexity
+    buildingCount = Math.floor(buildingCount * 0.7);
+    
+    // Disable some effects
+    scene.fog.density = 0.0025; // Increase fog density to hide pop-in
+}
+   
+function logResourceCounts(label) {
+    console.log(`${label}: `, {
+        smokeParticles: smokeParticles.length,
+        explosionParticles: explosionParticles.length,
+        scorchMarks: scorchMarks.length,
+        enemyMissiles: enemyMissiles.length,
+        buildings: buildings.length,
+        targetBuildings: targetBuildings.length,
+        minimapDots: minimapBuildingDots.length,
+        geometryCount: renderer.info.memory.geometries,
+        textureCount: renderer.info.memory.textures
+    });
+}
+
+        function createTerrain() {
+            // Create the ground
+            const groundGeometry = new THREE.PlaneGeometry(5000, 5000, 200, 200);
+             const groundMaterial = new THREE.MeshStandardMaterial({
+             color: 0x3d5e3a, // Dark green
+              roughness: 0.8,
+              metalness: 0.2
+              });
+              const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+              ground.rotation.x = -Math.PI / 2;
+             ground.position.y = -0.5;
+             ground.receiveShadow = false;
+             scene.add(ground);
+
+             // Add city ground plane (replacing roads)
+            const cityGroundGeometry = new THREE.PlaneGeometry(citySize * 1.2, citySize * 1.2);
+             const cityGroundMaterial = new THREE.MeshStandardMaterial({ color: 0x555555 }); // Grey color
+             const cityGround = new THREE.Mesh(cityGroundGeometry, cityGroundMaterial);
+             cityGround.rotation.x = -Math.PI / 2;
+             cityGround.position.y = -0.4; // higher above main ground
+             cityGround.receiveShadow = false;
+             scene.add(cityGround);
+
+             // Add more distant fog for horizon effect
+            scene.fog = new THREE.FogExp2(0x87CEEB, 0.0005);
+            
+            // Add some terrain variation outside the city
+            for (let i = 0; i < 100; i++) {
+                const distance = THREE.MathUtils.randFloat(citySize * 0.8, 800);
+                const angle = THREE.MathUtils.randFloat(0, Math.PI * 2);
+                const x = Math.cos(angle) * distance;
+                const z = Math.sin(angle) * distance;
+                
+                const hillSize = THREE.MathUtils.randFloat(7, 28);
+
+                const maxHeightRatio = 0.4; // Height can't be more than 40% of width
+                const hillHeight = Math.min(hillSize * maxHeightRatio, THREE.MathUtils.randFloat(2, 8));
+                
+                const hillGeometry = new THREE.ConeGeometry(hillSize, hillHeight, 6);
+                const hillMaterial = new THREE.MeshStandardMaterial({
+                    color: 0x3d5e3a,
+                    roughness: 0.9,
+                    metalness: 0.1,
+                });
+                
+                const hill = new THREE.Mesh(hillGeometry, hillMaterial);
+                hill.position.set(x, hillHeight / 2 - 0.5, z);
+                hill.castShadow = false;
+                hill.receiveShadow = false;
+                scene.add(hill);
+            }
+
+    // Add more hills in countryside
+    const countrysideFeatureCount = 300;
+    
+    for (let i = 0; i < countrysideFeatureCount; i++) {
+        // Determine distance from city center - dispersed throughout countryside
+        const distanceFromCenter = THREE.MathUtils.randFloat(citySize * 0.8, 2000);
+        const angle = THREE.MathUtils.randFloat(0, Math.PI * 2);
+        const x = Math.cos(angle) * distanceFromCenter;
+        const z = Math.sin(angle) * distanceFromCenter;
+        
+         // Create hills
+        const hillSize = THREE.MathUtils.randFloat(8, 60);
+
+        // Height proportional to size with maximum ratio
+        const maxHeightRatio = 0.35; // Even flatter for larger hills
+        const hillHeight = Math.min(hillSize * maxHeightRatio, THREE.MathUtils.randFloat(3, 15));
+    
+    const hillGeometry = new THREE.ConeGeometry(hillSize, hillHeight, 6);
+    const hillMaterial = new THREE.MeshStandardMaterial({
+        color: new THREE.Color(
+            0.2 + Math.random() * 0.1,
+            0.4 + Math.random() * 0.2,
+            0.2 + Math.random() * 0.1
+        ),
+        roughness: 0.9,
+        metalness: 0.1,
+    });
+    
+    const hill = new THREE.Mesh(hillGeometry, hillMaterial);
+    hill.position.set(x, hillHeight / 2 - 0.5, z);
+    hill.castShadow = false;
+    hill.receiveShadow = false;
+    scene.add(hill);
+}
+    }
+        
+    function createRoofSigns() {
+    // Create a canvas for the BINGO sign texture
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    canvas.width = 512;
+    canvas.height = 512;
+    
+    // Fill background
+    context.fillStyle = '#ff3333'; // Red background
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    
+    // Add border
+    context.strokeStyle = 'white';
+    context.lineWidth = 20;
+    context.strokeRect(10, 10, canvas.width - 20, canvas.height - 20);
+    
+    // Add "BINGO" text
+    context.font = 'bold 120px Arial';
+    context.fillStyle = 'white';
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    context.fillText('BINGO', canvas.width / 2, canvas.height / 2);
+    
+    // Create texture from canvas
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.minFilter = THREE.LinearFilter;
+    
+    // Choose random buildings to add signs to (about 15% of regular buildings)
+    buildings.forEach(building => {
+        // Skip target buildings and randomly select ~15% of other buildings
+        if (!building.userData.isTarget && Math.random() < 0.15) {
+            const width = building.userData.width;
+            const height = building.userData.height;
+            
+            // Create sign geometry and material
+            const signGeometry = new THREE.PlaneGeometry(width, width); // Square sign
+            const signMaterial = new THREE.MeshBasicMaterial({ 
+                map: texture, 
+                side: THREE.FrontSide
+            });
+            
+            // Create the sign mesh
+            const sign = new THREE.Mesh(signGeometry, signMaterial);
+            
+            // Position sign on top of building, facing upward
+            sign.position.copy(building.position);
+            sign.position.y = height + 0.1; // Place slightly above the building
+            sign.rotation.x = -Math.PI / 2; // Rotate to face upward
+            
+            // Add to scene
+            scene.add(sign);
+        }
+    });
+}    
+        
+    function createCity() {
+    // Clear any existing buildings first
+    for (let i = buildings.length - 1; i >= 0; i--) {
+        disposeObject(buildings[i]);
+    }
+    buildings = [];
+    targetBuildings = [];
+    
+    // Calculate the number of target buildings
+    const targetCount = Math.floor(buildingCount * targetPercentage);
+    stats.targetsRemaining = targetCount;
+
+    // Create a more spacious grid layout with well-defined streets
+    const gridSize = 15; // Number of grid cells per side
+    const cellSize = citySize / gridSize; // Size of each cell
+       
+    // Create array to track grid cell occupancy (to avoid overcrowding)
+     const positions = [];
+    
+    // Generate positions on the grid - one building per cell with random size
+    for (let x = 0; x < gridSize; x++) {
+        for (let z = 0; z < gridSize; z++) {
+                        
+            // Calculate cell center position
+            const cellX = (x - gridSize/2) * cellSize + cellSize/2;
+            const cellZ = (z - gridSize/2) * cellSize + cellSize/2;
+            
+            // Randomize building width (but keep within max limits)
+            const width = cellSize * 0.65; 
+            
+            // Add position to array
+            positions.push({
+                x: cellX, 
+                z: cellZ,
+                width: width
+            });
+            
+        }
+    }
+    
+    // Shuffle array for random distribution of target buildings
+    for (let i = positions.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [positions[i], positions[j]] = [positions[j], positions[i]];
+    }
+    
+    // Ensure all cells are filled with buildings
+      const actualBuildingCount = positions.length; // Use all available positions
+        buildingCount = positions.length; // Update buildingCount to match
+    
+    // Create target buildings (red, short)
+    for (let i = 0; i < targetCount && i < actualBuildingCount; i++) {
+        const pos = positions[i];
+        const height = THREE.MathUtils.randFloat(5, 10);
+        const width = pos.width;
+        
+        const buildingGeometry = new THREE.BoxGeometry(width, height, width);
+        const buildingMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0xcc0000, 
+            roughness: 0.7, 
+            metalness: 0.3  
+        });
+        const building = new THREE.Mesh(buildingGeometry, buildingMaterial);
+        
+        building.position.set(pos.x, height/2, pos.z);
+        building.castShadow = false;
+        building.receiveShadow = false;
+        building.userData.isTarget = true;
+        building.userData.width = width;
+        building.userData.height = height;
+        
+        scene.add(building);
+        buildings.push(building);
+        targetBuildings.push(building);
+    }
+    
+    // Create regular buildings (gray, varied heights)
+    for (let i = targetCount; i < actualBuildingCount; i++) {
+        const pos = positions[i];
+        
+         // Add 5% chance for very tall buildings
+         const isSuperTall = Math.random() < 0.05;
+        const height = isSuperTall ? 
+            THREE.MathUtils.randFloat(120, 180) :  // Very tall buildings 
+            THREE.MathUtils.randFloat(20, 100);    // Regular buildings
+        
+        const width = pos.width;
+        
+         // Randomize building materials to create variety
+         const roughness = THREE.MathUtils.randFloat(0.3, 0.9); // More variation in shininess
+        const metalness = THREE.MathUtils.randFloat(0.1, 0.5); // Some buildings more metallic
+        
+        // More varied colors
+        const colorBase = 0.5 + Math.random() * 0.15;
+        const colorVariation = Math.random() * 0.1 - 0.05; // Small variations in RGB
+        
+        const buildingGeometry = new THREE.BoxGeometry(width, height, width);
+        const buildingMaterial = new THREE.MeshStandardMaterial({ 
+            color: new THREE.Color(
+                colorBase + colorVariation,
+                colorBase + colorVariation,
+                colorBase + colorVariation
+            ),
+            roughness: roughness,
+            metalness: metalness
+        });
+        const building = new THREE.Mesh(buildingGeometry, buildingMaterial);
+        
+        building.position.set(pos.x, height/2, pos.z);
+        building.castShadow = false;
+        building.receiveShadow = false;
+        building.userData.isTarget = false;
+        building.userData.width = width;
+        building.userData.height = height;
+        
+        scene.add(building);
+        buildings.push(building);
+    }
+    
+    // Update HUD
+    const targetsElement = document.getElementById('targetsRemaining');
+    if (targetsElement) {
+    targetsElement.textContent = stats.targetsRemaining;
+    }
+}
+        
+function createMissile() {
+    // Create missile group
+    missile = new THREE.Group();
+    
+    // Create the main body (cylinder)
+    const bodyGeometry = new THREE.CylinderGeometry(1, 1, 8, 16);
+    const bodyMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0xff3333,  // Use direct color instead of selectedMissileColor
+        metalness: 0.3,
+        roughness: 0.6
+    });
+    const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+    body.castShadow = false;
+    missile.add(body);
+    
+    // Create the nose cone (cone)
+    const noseGeometry = new THREE.ConeGeometry(1, 3, 16);
+    const noseMaterial = new THREE.MeshStandardMaterial({ color: 0x999999 });
+    const nose = new THREE.Mesh(noseGeometry, noseMaterial);
+    nose.position.y = 5.5;
+    nose.castShadow = false;
+    missile.add(nose);
+
+    // Create exhaust nozzle (inverted cone)
+    const exhaustGeometry = new THREE.CylinderGeometry(1, 0.5, 1.5, 16);
+    const exhaustMaterial = new THREE.MeshStandardMaterial({ 
+        color: 0x111111, // Very dark gray, almost black
+        metalness: 0.8,
+        roughness: 0.4
+    });
+    const exhaust = new THREE.Mesh(exhaustGeometry, exhaustMaterial);
+    exhaust.position.y = -4.5; // Position at back of missile
+    exhaust.castShadow = false;
+    missile.add(exhaust);
+            
+            // Create fins (4 of them)
+            const finGeometry = new THREE.BoxGeometry(0.2, 2, 3);
+            const finMaterial = new THREE.MeshStandardMaterial({ color: 0x242424 });
+            
+            for (let i = 0; i < 4; i++) {
+                const fin = new THREE.Mesh(finGeometry, finMaterial);
+                fin.position.y = -3;
+                fin.castShadow = false;
+                
+                // Position fins around the missile
+                fin.rotation.y = (Math.PI / 2) * i;
+                fin.position.x = Math.sin((Math.PI / 2) * i) * 1.2;
+                fin.position.z = Math.cos((Math.PI / 2) * i) * 1.2;
+                
+                missile.userData[`fin${i}`] = fin;
+                missile.add(fin);
+            }
+            
+            // Add a glowing exhaust effect using a simple circle mesh
+             const glowGeometry = new THREE.CircleGeometry(0.8, 16);
+               const glowMaterial = new THREE.MeshBasicMaterial({ 
+                color: 0xff3300, 
+                transparent: true,
+                opacity: 0.9,
+                side: THREE.DoubleSide,
+               depthWrite: false
+         });
+             exhaustGlow = new THREE.Mesh(glowGeometry, glowMaterial);
+              exhaustGlow.position.y = -6; // Position behind the exhaust
+             exhaustGlow.rotation.x = Math.PI / 2; // Orient perpendicular to missile direction
+             missile.add(exhaustGlow);
+
+
+            // Add missile to scene
+            missile.rotation.x = Math.PI / 2; // Point forward
+            scene.add(missile);
+            
+            // Pick a random spawn point
+            resetMissile();
+        }
+        
+        function updateMissileExhaust() {
+    if (!exhaustGlow) return;
+    
+    // Scale the glow based on acceleration
+    if (isAccelerating) {
+        exhaustGlow.scale.set(1.5, 1.5, 1.5);
+        exhaustGlow.material.color.setHex(0xff5500); // Brighter orange
+        exhaustGlow.material.opacity = 0.95;
+    } else {
+        exhaustGlow.scale.set(1.0, 1.0, 1.0);
+        exhaustGlow.material.color.setHex(0xff3300); // Regular red/orange
+        exhaustGlow.material.opacity = 0.8;
+    }
+    
+    // Add a subtle pulse effect
+    const pulseAmount = 0.1 * Math.sin(Date.now() * 0.01);
+    exhaustGlow.scale.x += pulseAmount;
+    exhaustGlow.scale.y += pulseAmount;
+}
+
+        function setupMinimap() {
+           // Create container div for rotating the minimap
+    minimapContainer = document.createElement('div');
+    minimapContainer.style.width = '100%';
+    minimapContainer.style.height = '100%';
+    minimapContainer.style.transformOrigin = 'center center';
+    document.getElementById('minimap').appendChild(minimapContainer);
+    
+    // Create minimap renderer
+    minimapRenderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+    minimapRenderer.setSize(450, 450);
+    minimapRenderer.setClearColor(0x000000, 0.5);
+    minimapContainer.appendChild(minimapRenderer.domElement);
+            
+            // Create a separate scene for minimap
+            minimapScene = new THREE.Scene();
+
+            // Create minimap camera
+            minimapCamera = new THREE.OrthographicCamera(
+                -citySize/2 - 100, citySize/2 + 100, 
+                citySize/2 + 100, -citySize/2 - 100, 
+                1, 1000
+            );
+            minimapCamera.position.set(0, 400, 0);
+            minimapCamera.lookAt(new THREE.Vector3(0, 0, 0));
+            minimapCamera.up.set(0, 0, -1);
+
+           // Create a simple CIRCLE shape for player marker instead of triangle
+    const circleGeometry = new THREE.CircleGeometry(6, 16); // 6 radius, 8 segments
+    
+    const markerMaterial = new THREE.MeshBasicMaterial({
+        color: 0xff0000,
+        side: THREE.DoubleSide
+    });
+    
+    playerMarker = new THREE.Mesh(circleGeometry, markerMaterial);
+    
+    // Rotate to point forward and lay flat
+    playerMarker.rotation.x = Math.PI / 2;
+    playerMarker.rotation.z = Math.PI;
+    playerMarker.position.y = 1.0;
+    minimapScene.add(playerMarker);
+    
+
+    // Create a grid representation of the city for the minimap
+    const cityPlaneGeometry = new THREE.PlaneGeometry(citySize, citySize);
+    const cityPlaneMaterial = new THREE.MeshBasicMaterial({ 
+        color: 0x444444, 
+        transparent: true,
+        opacity: 0.5
+    });
+    const cityPlane = new THREE.Mesh(cityPlaneGeometry, cityPlaneMaterial);
+    cityPlane.rotation.x = -Math.PI / 2;
+    minimapScene.add(cityPlane);
+
+    }
+
+    // Convert missile direction to cardinal direction (N, NE, E, etc.)
+function getCardinalDirection(direction) {
+    // Calculate angle in degrees (0 is north, increases clockwise)
+    let angle = Math.atan2(direction.x, direction.z) * (180 / Math.PI);
+    if (angle < 0) angle += 360;
+    
+    // Map angle to cardinal direction
+    if (angle >= 337.5 || angle < 22.5) return "N";
+    if (angle >= 22.5 && angle < 67.5) return "NE";
+    if (angle >= 67.5 && angle < 112.5) return "E";
+    if (angle >= 112.5 && angle < 157.5) return "SE";
+    if (angle >= 157.5 && angle < 202.5) return "S";
+    if (angle >= 202.5 && angle < 247.5) return "SW";
+    if (angle >= 247.5 && angle < 292.5) return "W";
+    if (angle >= 292.5 && angle < 337.5) return "NW";
+    
+    return "N/A"; // Fallback
+}
+
+
+        
+        function resetMissile() {
+            // Reset crash flag
+            handleCrash.inProgress = false;
+
+            // Choose a random spawn position
+            if (playerMarker) {
+                  playerMarker.rotation.x = Math.PI / 2;
+                    playerMarker.rotation.z = Math.PI; // Match the initial setup rotation
+                }
+
+            const spawnIndex = Math.floor(Math.random() * spawnPoints.length);
+            currentSpawnPoint = spawnPoints[spawnIndex];
+            
+            // Set missile position
+            missile.position.copy(currentSpawnPoint);
+            missile.visible = true;
+            
+            // Set missile direction to face the city center
+            const dirToCenter = new THREE.Vector3(0, 0, 0).sub(currentSpawnPoint).normalize();
+            missileDirection.copy(dirToCenter);
+            missileDirection.y = 0; // Keep level with ground
+            missileDirection.normalize();
+
+            initialMissileAngle = Math.atan2(missileDirection.x, missileDirection.z);
+    
+            let mapRotation = Math.PI + initialMissileAngle;
+
+            minimapContainer.style.transform = `rotate(${mapRotation}rad)`;
+            
+            // Align missile with direction
+            const missileUp = new THREE.Vector3(0, 1, 0);
+            const missileRotation = new THREE.Quaternion().setFromUnitVectors(
+                new THREE.Vector3(0, 0, 1), 
+                missileDirection
+            );
+            missile.quaternion.copy(missileRotation);
+            
+            // Reset velocity
+            velocity = baseVelocity;
+            turnVelocity.set(0, 0, 0);
+            isAccelerating = false;
+            
+            // Reset flight time
+            startTime = Date.now();
+            elapsedTime = 0;
+        }
+        
+        /*
+        function createFireAndSmoke() {
+        // Check if we're at the particle limit
+        if (smokeParticles.length > MAX_SMOKE_PARTICLES) {
+        // Remove oldest particles if we're at the limit
+        const removeCount = Math.min(20, smokeParticles.length - MAX_SMOKE_PARTICLES + 20);
+        for (let i = 0; i < removeCount; i++) {
+            const oldParticle = smokeParticles.shift(); // Remove oldest first
+            disposeObject(oldParticle);
+        }
+    }
+
+    // Create particle group for fire
+    const fireCount = isAccelerating ? 6 : 2; // Less fire when not accelerating
+   
+    for (let i = 0; i < fireCount; i++) {
+        // More varied sizes for fire
+        const fireSize = isAccelerating ? 
+            THREE.MathUtils.randFloat(1.0, 2.0) : 
+            THREE.MathUtils.randFloat(0.6, 1.2);
+        
+        // Create more complex fire meshes (sphere + light)
+        const fireGeometry = new THREE.SphereGeometry(fireSize, 8, 8);
+        
+        // More vibrant colors for fire
+        const colorRandom = Math.random();
+        const fireColor = colorRandom < 0.3 ? 
+            0xffff00 : // Yellow
+            (colorRandom < 0.7 ? 0xff5500 : 0xff2200); // Orange or Red
+        
+        const fireMaterial = new THREE.MeshBasicMaterial({
+            color: fireColor,
+            transparent: true,
+            opacity: THREE.MathUtils.randFloat(0.7, 1.0) // Higher opacity
+        });
+        
+        const fire = new THREE.Mesh(fireGeometry, fireMaterial);
+        
+        // Position fire behind missile with more variance for accelerating
+        const missileBackVector = missileDirection.clone().negate();
+        const backDistance = isAccelerating ? 
+            THREE.MathUtils.randFloat(3, 7) : 
+            THREE.MathUtils.randFloat(2, 5);
+        
+        fire.position.copy(missile.position)
+            .add(missileBackVector.clone().multiplyScalar(backDistance))
+            .add(new THREE.Vector3(
+                THREE.MathUtils.randFloatSpread(isAccelerating ? 1.0 : 0.5),
+                THREE.MathUtils.randFloatSpread(isAccelerating ? 1.0 : 0.5),
+                THREE.MathUtils.randFloatSpread(isAccelerating ? 1.0 : 0.5)
+            ));
+        
+        // Add point light for glow effect on largest particles
+        if (fireSize > 1.5 && isAccelerating) {
+            const fireLight = new THREE.PointLight(fireColor, 2, 8);
+            fireLight.position.copy(fire.position);
+            scene.add(fireLight);
+            
+            // Store light in fire's userData
+            fire.userData.light = fireLight;
+        }
+        
+        // Fire behavior
+        fire.userData = {
+            life: THREE.MathUtils.randFloat(0.3, 0.7),
+            maxLife: THREE.MathUtils.randFloat(0.3, 0.7),
+            velocity: missileBackVector.clone().multiplyScalar(
+                isAccelerating ? 
+                THREE.MathUtils.randFloat(0.2, 0.5) : 
+                THREE.MathUtils.randFloat(0.1, 0.3)
+            )
+        };
+        
+        scene.add(fire);
+        smokeParticles.push(fire);
+    }
+
+    
+    
+    // Create smoke particles
+    if (!isAccelerating || Math.random() > 0.3) {
+        const smokeCount = isAccelerating ? 1 : 2; // More smoke when not accelerating
+        
+        for (let i = 0; i < smokeCount; i++) {
+            const smokeGeometry = new THREE.SphereGeometry(0.3, 8, 8);
+            const smokeMaterial = new THREE.MeshBasicMaterial({
+                color: 0x888888,
+                transparent: true,
+                opacity: 0.4
+            });
+            
+            const smoke = new THREE.Mesh(smokeGeometry, smokeMaterial);
+        
+            // Position smoke behind missile 
+            const missileBackVector = missileDirection.clone().negate();
+            smoke.position.copy(missile.position)
+                .add(missileBackVector.multiplyScalar(6))
+                .add(new THREE.Vector3(
+                    THREE.MathUtils.randFloatSpread(1), 
+                    THREE.MathUtils.randFloatSpread(1), 
+                    THREE.MathUtils.randFloatSpread(1)  
+                ));
+                    
+            // Corrected from 'fire' to 'smoke'
+            smoke.userData = {
+                life: 1.0,
+                maxLife: 1.0,
+                growRate: THREE.MathUtils.randFloat(1.02, 1.05),
+                velocity: new THREE.Vector3(
+                    THREE.MathUtils.randFloatSpread(0.1),
+                    THREE.MathUtils.randFloat(0.05, 0.2),
+                    THREE.MathUtils.randFloatSpread(0.1)
+                )
+            };
+                
+            scene.add(smoke);
+            smokeParticles.push(smoke);
+        }
+    }
+}
+    */
+
+    function initEnemyExplosionMaterials() {
+    // Instead of creating different materials, we'll use the same shader materials
+    // as player explosions to ensure consistent visuals for all explosions
+    
+    // Initialize the player explosion materials first if needed
+    if (!explosionMaterialPool.yellow) {
+        initExplosionTextures();
+    }
+    
+    // Share the same material pool for consistency
+    enemyExplosionMaterialPool.yellow = explosionMaterialPool.yellow;
+    enemyExplosionMaterialPool.orange = explosionMaterialPool.orange;
+    enemyExplosionMaterialPool.red = explosionMaterialPool.red;
+}
+
+    function initExplosionTextures() {
+    // Create shared textures
+    if (!window.explosionTextures) {
+        window.explosionTextures = {
+            yellow: createExplosionTextureWithColor('#ffff40'),  
+            orange: createExplosionTextureWithColor('#ff8000'),  
+            red: createExplosionTextureWithColor('#ff2000')      
+        };
+        
+        // Create reusable shader materials (instead of MeshBasicMaterial)
+        explosionMaterialPool.yellow = createExplosionShaderMaterial(
+            window.explosionTextures.yellow,
+            0xffff40
+        );
+        
+        explosionMaterialPool.orange = createExplosionShaderMaterial(
+            window.explosionTextures.orange,
+            0xff8000
+        );
+        
+        explosionMaterialPool.red = createExplosionShaderMaterial(
+            window.explosionTextures.red,
+            0xff2000
+        );
+    }
+}
+
+function createExplosionTextureWithColor(color) {
+    // Create a texture for explosion particles
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    
+    const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+    
+    // Use warmer colors with no blue/green tints
+    if (color.includes('ff')) { // Red/orange variants
+        gradient.addColorStop(0, color);
+        gradient.addColorStop(0.7, color.replace('ff', '40'));
+        gradient.addColorStop(1, 'rgba(0,0,0,0)');
+    } else {
+        gradient.addColorStop(0, '#ffdd40'); // Warm yellow default
+        gradient.addColorStop(0.7, '#ff6600');
+        gradient.addColorStop(1, 'rgba(0,0,0,0)');
+    }
+    
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 64, 64);
+    
+    return new THREE.CanvasTexture(canvas);
+}
+
+function createExplosion(position, isPlayerEvent = false, createGroundScorch = true) {
+    // Create a more dramatic multi-stage explosion
+    const isLargeExplosion = isPlayerEvent; // Player explosions should be larger
+    
+    // Calculate core fireball and debris counts based on importance
+    const maxFireballParticles = isPlayerEvent ? 30 : 20;  // Increased from 15 to 20
+    const maxDebrisParticles = isPlayerEvent ? 40 : 25;    // Increased from 20 to 25 
+    const maxSecondaryParticles = isPlayerEvent ? 20 : 12; // Increased from 10 to 12
+    
+    // STAGE 1: Initial fireball (bright center, fast expansion)
+    createExplosionCore(position, maxFireballParticles, isPlayerEvent);
+    
+    // STAGE 2: Flying debris (with trails)
+    setTimeout(() => {
+        if (gameActive) createExplosionDebris(position, maxDebrisParticles, isPlayerEvent);
+    }, 50);
+    
+    // STAGE 3: Secondary blast wave
+    setTimeout(() => {
+        if (gameActive) createExplosionSecondary(position, maxSecondaryParticles, isPlayerEvent);
+    }, 150);
+    
+    // Handle remaining explosion logic - create a scorch mark but NO smoke from explosion directly
+    if (createGroundScorch) {
+        createScorchMark(position, false);
+    }
+    
+    // Sound and shake effects
+    if (isPlayerEvent) {
+        screenShakeTime = 2.0;  // Longer shake
+        screenShakeIntensity = 3.0; // More intense shake
+        playSound('explosion');
+    } else {
+        // Add smaller screen shake for enemy explosions too
+        screenShakeTime = 1.0;
+        screenShakeIntensity = 1.5;
+        playEnemyExplosionSound(); 
+    }
+}
+
+// CORE EXPLOSION - bright expanding fireball
+function createExplosionCore(position, count, isLarge) {
+    // Create the shared texture if it doesn't exist yet
+    if (!window.explosionCoreTexture) {
+        // Create a better explosion texture with internal structure
+        const canvas = document.createElement('canvas');
+        canvas.width = 128;
+        canvas.height = 128;
+        const ctx = canvas.getContext('2d');
+        
+        // Create multi-layered explosion gradient with more internal detail
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+        
+        // Base glow
+        const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, canvas.width/2);
+        gradient.addColorStop(0, 'rgba(255, 255, 220, 1.0)');    // White-hot center
+        gradient.addColorStop(0.2, 'rgba(255, 240, 160, 0.9)');  // Bright yellow
+        gradient.addColorStop(0.4, 'rgba(255, 180, 50, 0.8)');   // Deep orange
+        gradient.addColorStop(0.7, 'rgba(200, 50, 10, 0.5)');    // Dark red
+        gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');           // Transparent edge
+        
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // Add some texture/noise for more realistic fire
+        ctx.globalCompositeOperation = 'overlay';
+        for (let i = 0; i < 30; i++) {
+            const x = Math.random() * canvas.width;
+            const y = Math.random() * canvas.height;
+            const r = Math.random() * 20 + 5;
+            
+            const noiseGrad = ctx.createRadialGradient(x, y, 0, x, y, r);
+            noiseGrad.addColorStop(0, `rgba(255, 255, 255, ${Math.random() * 0.4})`);
+            noiseGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+            
+            ctx.fillStyle = noiseGrad;
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        
+        window.explosionCoreTexture = new THREE.CanvasTexture(canvas);
+    }
+    
+    // Create core fireball particles
+    const geometry = new THREE.PlaneGeometry(1, 1);
+    
+    for (let i = 0; i < count; i++) {
+        // Create shader material with emissive effect - uses the same advanced shader
+        // for both player and enemy explosions
+        const material = new THREE.ShaderMaterial({
+            uniforms: {
+                map: { value: window.explosionCoreTexture },
+                color: { value: new THREE.Color(0xffbb44) }, // Base orange color
+                time: { value: 0.0 }
+            },
+            vertexShader: `
+                varying vec2 vUv;
+                void main() {
+                    vUv = uv;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform sampler2D map;
+                uniform vec3 color;
+                uniform float time;
+                varying vec2 vUv;
+                
+                void main() {
+                    vec4 texColor = texture2D(map, vUv);
+                    
+                    // Pulse effect
+                    float pulse = 0.9 + 0.1 * sin(time * 12.0);
+                    
+                    // Enhance warm colors
+                    vec3 warmColor = color * texColor.rgb;
+                    warmColor.r *= 1.2 * pulse;
+                    warmColor.g *= 1.0 * pulse;
+                    warmColor.b *= 0.8;
+                    
+                    gl_FragColor = vec4(warmColor, texColor.a);
+                }
+            `,
+            transparent: true,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+            side: THREE.DoubleSide
+        });
+        
+        const particle = new THREE.Mesh(geometry, material);
+        particle.position.copy(position.clone());
+        
+        // Size still depends on whether it's player or enemy
+        const size = isLarge ? 
+            THREE.MathUtils.randFloat(3.0, 8.0) : 
+            THREE.MathUtils.randFloat(2.0, 6.0);
+            
+        particle.scale.set(size, size, 1);
+        
+        // Randomized outward velocity but keep particles closer to center
+        const angle = Math.random() * Math.PI * 2;
+        const elevation = (Math.random() * Math.PI - Math.PI/2) * 0.6; // Biased toward horizontal
+        const speed = THREE.MathUtils.randFloat(8, 20); // Slower initial speed for longer effect
+        
+        const velocity = new THREE.Vector3(
+            Math.cos(angle) * Math.cos(elevation) * speed,
+            Math.sin(elevation) * speed,
+            Math.sin(angle) * Math.cos(elevation) * speed
+        );
+        
+        // Make fireball grow rapidly at first, then fade
+        particle.userData = {
+            life: THREE.MathUtils.randFloat(0.8, 1.6), // Longer life
+            maxLife: THREE.MathUtils.randFloat(0.8, 1.6),
+            velocity: velocity,
+            isBillboard: true,
+            isFireball: true,
+            growthPhase: true,
+            growthTime: THREE.MathUtils.randFloat(0.3, 0.5), // Time spent growing
+            maxGrowth: isLarge ? THREE.MathUtils.randFloat(1.8, 2.5) : THREE.MathUtils.randFloat(1.6, 2.2),
+            initialScale: size,
+            acceleration: new THREE.Vector3(0, isLarge ? 2 : 1, 0) // Slight upward acceleration
+        };
+        
+        scene.add(particle);
+        explosionParticles.push(particle);
+    }
+}
+
+// DEBRIS PARTICLES - streaking particles with trails
+function createExplosionDebris(position, count, isLarge) {
+    if (!window.debrisTexture) {
+        // Create streak/ember texture for debris
+        const canvas = document.createElement('canvas');
+        canvas.width = 64;
+        canvas.height = 64;
+        const ctx = canvas.getContext('2d');
+        
+        // Create elongated particle for streaking effect
+        const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+        gradient.addColorStop(0, 'rgba(255, 220, 170, 1.0)');  // Bright core
+        gradient.addColorStop(0.4, 'rgba(255, 120, 40, 0.8)');  // Orange middle
+        gradient.addColorStop(0.7, 'rgba(180, 40, 10, 0.5)');   // Darker edge
+        gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');         // Transparent
+        
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, 64, 64);
+        
+        window.debrisTexture = new THREE.CanvasTexture(canvas);
+    }
+    
+    const geometry = new THREE.PlaneGeometry(1, 1);
+    
+    for (let i = 0; i < count; i++) {
+        // Pick temperature based on random value (hotter = yellower)
+        const temperature = Math.random();
+        let color;
+        
+        if (temperature > 0.7) {
+            color = new THREE.Color(0xffee33); // Hot yellow
+        } else if (temperature > 0.4) {
+            color = new THREE.Color(0xff9922); // Orange
+        } else {
+            color = new THREE.Color(0xff3311); // Red
+        }
+        
+        // Create material with streak effect
+        const material = new THREE.ShaderMaterial({
+            uniforms: {
+                map: { value: window.debrisTexture },
+                color: { value: color },
+                time: { value: 0.0 }
+            },
+            vertexShader: `
+                varying vec2 vUv;
+                void main() {
+                    vUv = uv;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform sampler2D map;
+                uniform vec3 color;
+                uniform float time;
+                varying vec2 vUv;
+                
+                void main() {
+                    vec4 texColor = texture2D(map, vUv);
+                    
+                    // Slight pulsing glow effect
+                    float pulse = 0.9 + 0.1 * sin(time * 15.0);
+                    
+                    vec3 finalColor = color * texColor.rgb * pulse;
+                    gl_FragColor = vec4(finalColor, texColor.a);
+                }
+            `,
+            transparent: true,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+            side: THREE.DoubleSide
+        });
+        
+        const particle = new THREE.Mesh(geometry, material);
+        
+        // Slightly randomize initial position for more chaotic look
+        particle.position.copy(position.clone().add(
+            new THREE.Vector3(
+                THREE.MathUtils.randFloatSpread(isLarge ? 2 : 1),
+                THREE.MathUtils.randFloatSpread(isLarge ? 2 : 1),
+                THREE.MathUtils.randFloatSpread(isLarge ? 2 : 1)
+            )
+        ));
+        
+        // Smaller debris particles that stretch based on velocity
+        const size = THREE.MathUtils.randFloat(1.0, 2.5);
+        particle.scale.set(size, size, 1);
+        
+        // Higher velocity for streaking effect
+        const angle = Math.random() * Math.PI * 2;
+        const elevation = Math.random() * Math.PI - Math.PI/2;
+        const speed = THREE.MathUtils.randFloat(25, 60); // High speed for streaks
+        
+        const velocity = new THREE.Vector3(
+            Math.cos(angle) * Math.cos(elevation) * speed,
+            Math.sin(elevation) * speed,
+            Math.sin(angle) * Math.cos(elevation) * speed
+        );
+        
+        // Add gravity and drag effects
+        particle.userData = {
+            life: THREE.MathUtils.randFloat(0.6, 1.2),
+            maxLife: THREE.MathUtils.randFloat(0.6, 1.2),
+            velocity: velocity,
+            isBillboard: true,
+            isDebris: true,
+            initialScale: size,
+            rotationSpeed: new THREE.Vector3(
+                Math.random() * 0.2 - 0.1,
+                Math.random() * 0.2 - 0.1,
+                Math.random() * 0.2 - 0.1
+            ),
+            gravity: 20, // Higher gravity for arcing effect
+            drag: THREE.MathUtils.randFloat(0.2, 0.4) // Air resistance
+        };
+        
+        scene.add(particle);
+        explosionParticles.push(particle);
+    }
+}
+
+// SECONDARY EXPANSION WAVE - outward expanding ring
+function createExplosionSecondary(position, count, isLarge) {
+    if (!window.secondaryTexture) {
+        // Create shockwave-like texture
+        const canvas = document.createElement('canvas');
+        canvas.width = 128;
+        canvas.height = 128;
+        const ctx = canvas.getContext('2d');
+        
+        // Create dual-layer gradient for more complex effect
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+        
+        // First layer - central glow
+        const gradient1 = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, canvas.width/2);
+        gradient1.addColorStop(0, 'rgba(255, 180, 80, 0.8)'); // Orange core
+        gradient1.addColorStop(0.5, 'rgba(200, 100, 30, 0.4)'); // Mid orange
+        gradient1.addColorStop(0.7, 'rgba(150, 50, 20, 0.2)'); // Darker edge
+        gradient1.addColorStop(1, 'rgba(0, 0, 0, 0)'); // Transparent edge
+        
+        ctx.fillStyle = gradient1;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        window.secondaryTexture = new THREE.CanvasTexture(canvas);
+    }
+    
+    const geometry = new THREE.PlaneGeometry(1, 1);
+    
+    for (let i = 0; i < count; i++) {
+        const material = new THREE.ShaderMaterial({
+            uniforms: {
+                map: { value: window.secondaryTexture },
+                color: { value: new THREE.Color(0xff9944) },
+                time: { value: 0.0 }
+            },
+            vertexShader: `
+                varying vec2 vUv;
+                void main() {
+                    vUv = uv;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform sampler2D map;
+                uniform vec3 color;
+                uniform float time;
+                varying vec2 vUv;
+                
+                void main() {
+                    vec4 texColor = texture2D(map, vUv);
+                    
+                    // Dynamic color adjustment based on time
+                    vec3 adjustedColor = color;
+                    adjustedColor.r *= (1.0 + 0.1 * sin(time * 8.0));
+                    
+                    gl_FragColor = vec4(adjustedColor * texColor.rgb, texColor.a);
+                }
+            `,
+            transparent: true,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+            side: THREE.DoubleSide
+        });
+        
+        const particle = new THREE.Mesh(geometry, material);
+        
+        // Position with slight random offset
+        particle.position.copy(position.clone().add(
+            new THREE.Vector3(
+                THREE.MathUtils.randFloatSpread(1),
+                THREE.MathUtils.randFloatSpread(1) + 1, // Slightly higher
+                THREE.MathUtils.randFloatSpread(1)
+            )
+        ));
+        
+        // Larger size for wave effect
+        const size = isLarge ? 
+            THREE.MathUtils.randFloat(5.0, 10.0) : 
+            THREE.MathUtils.randFloat(3.0, 7.0);
+            
+        particle.scale.set(size, size, 1);
+        
+        // Slower outward velocity for wave effect
+        const angle = Math.random() * Math.PI * 2;
+        const elevation = (Math.random() * Math.PI - Math.PI/2) * 0.5; // More horizontal
+        const speed = THREE.MathUtils.randFloat(5, 15); // Slower speed
+        
+        const velocity = new THREE.Vector3(
+            Math.cos(angle) * Math.cos(elevation) * speed,
+            Math.sin(elevation) * speed * 0.5, // Reduced vertical component
+            Math.sin(angle) * Math.cos(elevation) * speed
+        );
+        
+        // Wave particles expand rapidly
+        particle.userData = {
+            life: THREE.MathUtils.randFloat(0.8, 1.4),
+            maxLife: THREE.MathUtils.randFloat(0.8, 1.4),
+            velocity: velocity,
+            isBillboard: true,
+            isWave: true,
+            initialScale: size,
+            growRate: 1.08, // Fast growth
+            fadeRate: 0.7 // Quick fade after expanding
+        };
+        
+        scene.add(particle);
+        explosionParticles.push(particle);
+    }
+}
+
+// Create billowing smoke after explosion
+function createBillowingSmoke(position) {
+    if (smokeParticles.length > MAX_SMOKE_PARTICLES * 0.9) return;
+    
+    if (!window.billowyTexture) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 128;
+        canvas.height = 128;
+        const ctx = canvas.getContext('2d');
+        
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+        
+        // Create soft-edged cloud-like gradient
+        const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, canvas.width/2);
+        gradient.addColorStop(0, 'rgba(80, 80, 80, 0.9)'); // Dense center
+        gradient.addColorStop(0.5, 'rgba(70, 70, 70, 0.6)'); // Mid-density
+        gradient.addColorStop(0.8, 'rgba(60, 60, 60, 0.3)'); // Light edge
+        gradient.addColorStop(1, 'rgba(60, 60, 60, 0)'); // Transparent edge
+        
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // Add some texture for more realistic smoke
+        ctx.globalCompositeOperation = 'overlay';
+        for (let i = 0; i < 20; i++) {
+            const x = Math.random() * canvas.width;
+            const y = Math.random() * canvas.height;
+            const r = Math.random() * 25 + 5;
+            
+            const cloudGrad = ctx.createRadialGradient(x, y, 0, x, y, r);
+            cloudGrad.addColorStop(0, `rgba(255, 255, 255, ${Math.random() * 0.2})`);
+            cloudGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+            
+            ctx.fillStyle = cloudGrad;
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        
+        window.billowyTexture = new THREE.CanvasTexture(canvas);
+    }
+    
+    const geometry = new THREE.PlaneGeometry(1, 1);
+    const material = new THREE.MeshBasicMaterial({
+        map: window.billowyTexture,
+        transparent: true,
+        depthWrite: false,
+        opacity: 0.7,
+        side: THREE.DoubleSide
+    });
+    
+    const smoke = new THREE.Mesh(geometry, material);
+    smoke.position.copy(position);
+    
+    // Start small, will billow outward
+    const size = THREE.MathUtils.randFloat(2, 4);
+    smoke.scale.set(size, size, 1);
+    
+    // Slow rising velocity
+    const driftX = THREE.MathUtils.randFloatSpread(1);
+    const driftZ = THREE.MathUtils.randFloatSpread(1);
+    
+    smoke.userData = {
+        life: THREE.MathUtils.randFloat(3, 6), // Long-lasting smoke
+        maxLife: THREE.MathUtils.randFloat(3, 6),
+        growRate: 1.01, // Slow growth
+        velocity: new THREE.Vector3(
+            driftX, 
+            THREE.MathUtils.randFloat(1, 3), // Upward drift
+            driftZ
+        ),
+        isBillboard: true,
+        rotationSpeed: new THREE.Vector3(0, 0, THREE.MathUtils.randFloatSpread(0.2)),
+        initialScale: size
+    };
+    
+    scene.add(smoke);
+    smokeParticles.push(smoke);
+}
+        
+
+function updateScorchMarks(delta) {
+    // Only process smoke generation on a global timer
+    globalSmokeTimer -= delta;
+    
+    // Skip processing if timer hasn't expired or no marks exist
+    if (globalSmokeTimer > 0 || scorchMarks.length === 0) return;
+    
+    // Reset timer when it expires
+    globalSmokeTimer = globalSmokeInterval;
+    
+    // Update wind direction occasionally
+    if (Math.random() < 0.1) {
+        globalWindDirection.set(
+            Math.random() * 0.4 - 0.2,  // Slight x drift
+            0,                          // No vertical wind
+            Math.random() * 0.4 - 0.2   // Slight z drift
+        ).normalize().multiplyScalar(0.3);
+    }
+    
+    // Process scorch marks for smoke emission
+    for (let i = 0; i < scorchMarks.length; i++) {
+        const scorch = scorchMarks[i];
+        if (!scorch || !scorch.userData || !scorch.userData.smokeEnabled) continue;
+        
+        // Calculate age as a ratio (0 = fresh, 1 = expired)
+        const age = (Date.now() - scorch.userData.creationTime);
+        const ageRatio = Math.min(1, age / scorch.userData.flickerDuration);
+        
+        // Skip old scorch marks
+        if (ageRatio > 0.8) continue;
+        
+        // More smoke for fresh scorches, less as they age
+        const smokeThreshold = 1 - Math.pow(ageRatio, 0.5); // Non-linear falloff
+        const isTargetHit = scorch.userData.isTargetHit;
+        
+        // Calculate emission probability based on age and type
+        const emissionChance = globalSmokeChance * smokeThreshold * scorch.userData.smokeIntensity;
+        
+        // Target hits create more dramatic rising smoke columns
+        if (isTargetHit && ageRatio < 0.6 && Math.random() < emissionChance) {
+            // Create larger rising smoke
+            createDramaticScorchSmoke(scorch, true);
+            
+            // 40% chance for additional smoke particles to create denser effect
+            if (Math.random() < 0.4) {
+                setTimeout(() => {
+                    if (scorch.userData.smokeEnabled) {
+                        createDramaticScorchSmoke(scorch, false);
+                    }
+                }, Math.random() * 200); // Slight delay for varied emission
+            }
+        } 
+        // Regular scorch marks emit simpler smoke
+        else if (Math.random() < emissionChance * 0.5) {
+            createDramaticScorchSmoke(scorch, false);
+        }
+    }
+    
+    // Process damaged buildings together with scorches
+    updateDamagedBuildingsSmoke();
+}
+
+function createDramaticScorchSmoke(scorch, isLarge = false) {
+    // Skip if we're at particle limit
+    if (smokeParticles.length > MAX_SMOKE_PARTICLES * 0.9) return;
+    
+    // Create a shared smoke texture if it doesn't exist
+    if (!window.scorchSmokeTexture) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 128;
+        canvas.height = 128;
+        const ctx = canvas.getContext('2d');
+        
+        // Create a more detailed smoke texture
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+        
+        // Create main cloud-like gradient
+        const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, canvas.width/2);
+        gradient.addColorStop(0, 'rgba(50, 50, 50, 1.0)');
+        gradient.addColorStop(0.4, 'rgba(60, 60, 60, 0.8)');
+        gradient.addColorStop(0.7, 'rgba(70, 70, 70, 0.4)');
+        gradient.addColorStop(1, 'rgba(80, 80, 80, 0)');
+        
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // Add texture noise for more realistic smoke
+        ctx.globalCompositeOperation = 'overlay';
+        for (let i = 0; i < 30; i++) {
+            const x = Math.random() * canvas.width;
+            const y = Math.random() * canvas.height;
+            const r = Math.random() * 20 + 5;
+            
+            const cloudGrad = ctx.createRadialGradient(x, y, 0, x, y, r);
+            cloudGrad.addColorStop(0, `rgba(255, 255, 255, ${Math.random() * 0.2})`);
+            cloudGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+            
+            ctx.fillStyle = cloudGrad;
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        
+        window.scorchSmokeTexture = new THREE.CanvasTexture(canvas);
+    }
+    
+    // Create billboarded plane for smoke
+    const smokeSize = isLarge ? 
+        THREE.MathUtils.randFloat(2.0, 3.5) : 
+        THREE.MathUtils.randFloat(1.0, 2.0);
+        
+    const smokeGeometry = new THREE.PlaneGeometry(1, 1);
+    const smokeMaterial = new THREE.MeshBasicMaterial({
+        map: window.scorchSmokeTexture,
+        transparent: true,
+        depthWrite: false,
+        opacity: THREE.MathUtils.randFloat(0.5, 0.8),
+        side: THREE.DoubleSide
+    });
+    
+    const smoke = new THREE.Mesh(smokeGeometry, smokeMaterial);
+    smoke.scale.set(smokeSize, smokeSize, 1);
+    
+    // Position smoke with variation
+    const scorchPos = scorch.position.clone();
+    smoke.position.copy(scorchPos).add(
+        new THREE.Vector3(
+            THREE.MathUtils.randFloatSpread(1.5),
+            THREE.MathUtils.randFloat(0.5, isLarge ? 2.5 : 1.5),
+            THREE.MathUtils.randFloatSpread(1.5)
+        )
+    );
+    
+    // Billboard to face camera
+    smoke.userData.isBillboard = true;
+    
+    // Smoke behavior
+    smoke.userData = {
+        life: isLarge ? THREE.MathUtils.randFloat(3, 5) : THREE.MathUtils.randFloat(2, 3),
+        maxLife: isLarge ? THREE.MathUtils.randFloat(3, 5) : THREE.MathUtils.randFloat(2, 3),
+        growRate: THREE.MathUtils.randFloat(1.005, 1.012),
+        velocity: new THREE.Vector3(
+            globalWindDirection.x + THREE.MathUtils.randFloatSpread(0.2),
+            THREE.MathUtils.randFloat(isLarge ? 1.0 : 0.5, isLarge ? 1.8 : 1.0),
+            globalWindDirection.z + THREE.MathUtils.randFloatSpread(0.2)
+        ),
+        rotationSpeed: new THREE.Vector3(0, 0, THREE.MathUtils.randFloatSpread(0.1)),
+        isBillboard: true,
+        source: 'scorch'
+    };
+    
+    scene.add(smoke);
+    smokeParticles.push(smoke);
+}
+
+function createBillboardSmoke() {
+    // Create a single shared texture for all smoke billboards
+    if (!window.smokeTexture) {
+        // Create the smoke texture procedurally
+        const canvas = document.createElement('canvas');
+        canvas.width = 64;
+        canvas.height = 64;
+        const ctx = canvas.getContext('2d');
+        
+        // Create radial gradient for a soft smoke puff
+        const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+        gradient.addColorStop(0, 'rgba(40, 40, 40, 1.0)');
+        gradient.addColorStop(0.3, 'rgba(40, 40, 40, 0.8)');
+        gradient.addColorStop(0.7, 'rgba(40, 40, 40, 0.1)');
+        gradient.addColorStop(1, 'rgba(40, 40, 40, 0)');
+        
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, 64, 64);
+        
+        window.smokeTexture = new THREE.CanvasTexture(canvas);
+    }
+    
+    // Create a simple plane that will always face the camera
+    const smokeGeometry = new THREE.PlaneGeometry(1, 1);
+    const smokeMaterial = new THREE.MeshBasicMaterial({
+        map: window.smokeTexture,
+        transparent: true,
+        opacity: 0.7,
+        depthWrite: false,
+        side: THREE.DoubleSide
+    });
+    
+    return { geometry: smokeGeometry, material: smokeMaterial };
+}
+
+// Create a single timer to update all scorch marks
+function startGlobalScorchTimer() {
+    globalScorchTimer = setInterval(() => {
+        // If no scorch marks, stop the timer
+        if (scorchMarks.length === 0) {
+            clearInterval(globalScorchTimer);
+            globalScorchTimer = null;
+            return;
+        }
+        
+        // Update all scorch marks
+        for (let i = scorchMarks.length - 1; i >= 0; i--) {
+            const scorch = scorchMarks[i];
+            const embers = scorch.userData.emberEffect;
+            if (!embers) continue;
+            
+            const age = (Date.now() - scorch.userData.creationTime);
+            
+            // Remove if too old
+            if (age > scorch.userData.flickerDuration) {
+                embers.material.opacity = 0;
+                // Don't remove here, let the cleanup function handle removal
+                continue;
+            }
+            
+            // Random flickering
+            const flickerIntensity = Math.random() * 0.3 + 0.2;
+            
+            // Fade out over time
+            const agePercent = age / scorch.userData.flickerDuration;
+            embers.material.opacity = flickerIntensity * (1 - agePercent);
+        }
+    }, globalScorchInterval);
+}
+
+// Create smoldering particle effect
+function createSmolderingParticle(position) {
+    if (smokeParticles.length > MAX_SMOKE_PARTICLES * 0.8) return;
+
+    const smokeSize = THREE.MathUtils.randFloat(0.3, 0.7);
+    const smokeGeometry = new THREE.SphereGeometry(smokeSize, 8, 8);
+    
+    // Start with red/orange color and transition to gray/black
+    const smokeColor = new THREE.Color(0xff3300); // Initial red/orange
+    const smokeMaterial = new THREE.MeshBasicMaterial({
+        color: smokeColor,
+        transparent: true,
+        opacity: THREE.MathUtils.randFloat(0.4, 0.7)
+    });
+    
+    const smoke = new THREE.Mesh(smokeGeometry, smokeMaterial);
+    
+    // Add small offset to position for variation
+    smoke.position.copy(position).add(
+        new THREE.Vector3(
+            THREE.MathUtils.randFloatSpread(2),
+            THREE.MathUtils.randFloat(0.5, 2),
+            THREE.MathUtils.randFloatSpread(2)
+        )
+    );
+    
+    // Smoke behavior properties
+    smoke.userData = {
+        life: THREE.MathUtils.randFloat(1, 2),
+        maxLife: THREE.MathUtils.randFloat(1, 2.5),
+        growRate: THREE.MathUtils.randFloat(1.01, 1.03),
+        velocity: new THREE.Vector3(
+            THREE.MathUtils.randFloatSpread(0.2),
+            THREE.MathUtils.randFloat(0.5, 1.0),
+            THREE.MathUtils.randFloatSpread(0.2)
+        ),
+        // Color transition data
+        initialColor: new THREE.Color(0xff3300),
+        finalColor: new THREE.Color(0x222222)
+    };
+    
+    scene.add(smoke);
+    smokeParticles.push(smoke);
+}
+
+function createSmokeColumn(position, height = 15) {
+    // Skip if we're at particle limit
+    if (smokeParticles.length > MAX_SMOKE_PARTICLES * 0.9) return;
+    
+    // Create a cylinder for the smoke column
+    const columnGeometry = new THREE.CylinderGeometry(
+        2,    // top radius - wider at top
+        0.8,  // bottom radius - narrower at bottom
+        height, // height of column
+        8,    // segments
+        5,    // height segments
+        true  // open ended
+    );
+    
+    // Create gradient material that's more transparent at edges
+    const columnMaterial = new THREE.ShaderMaterial({
+        transparent: true,
+        depthWrite: false,
+        uniforms: {
+            time: { value: 0 },
+            opacity: { value: 0.6 }
+        },
+        vertexShader: `
+            varying vec2 vUv;
+            varying float vHeight;
+            void main() {
+                vUv = uv;
+                vHeight = position.y;
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+        `,
+        fragmentShader: `
+            uniform float time;
+            uniform float opacity;
+            varying vec2 vUv;
+            varying float vHeight;
+            void main() {
+                // Calculate distance from center of cylinder
+                float distFromCenter = abs(vUv.x - 0.5) * 2.0;
+                
+                // More transparent at edges and top
+                float edgeFade = smoothstep(0.9, 0.7, distFromCenter);
+                float heightFade = smoothstep(0.0, 1.0, vHeight/10.0);
+                
+                // Noise-like effect using vUv
+                float noise = fract(sin(vUv.x * 12.345 + vUv.y * 67.890 + time) * 43758.5453);
+                
+                gl_FragColor = vec4(0.2, 0.2, 0.2, opacity * edgeFade * (1.0-heightFade) * (0.7 + 0.3 * noise));
+            }
+        `
+    });
+    
+    const column = new THREE.Mesh(columnGeometry, columnMaterial);
+    column.position.copy(position);
+    column.position.y += height / 2; // Position bottom at the source point
+    
+    // Add to scene 
+    scene.add(column);
+    
+    // Special userData for smoke column
+    column.userData = {
+        isColumn: true,
+        life: 10.0,
+        maxLife: 10.0,
+        startHeight: height,
+        velocity: new THREE.Vector3(0, 0.05, 0), // Very slow rise
+        startTime: Date.now() / 1000
+    };
+    
+    smokeParticles.push(column);
+    
+    // Add this to your animate loop:
+    column.material.uniforms.time.value = Date.now() / 1000 - column.userData.startTime;
+}
+        
+function updateParticles(delta) {
+    // Update smoke particles
+    for (let i = smokeParticles.length - 1; i >= 0; i--) {
+        const particle = smokeParticles[i];
+        if (!particle) continue;
+        
+        // Update life
+        particle.userData.life -= delta;
+        
+        // Remove if dead
+        if (particle.userData.life <= 0) {
+            // Remove associated light if it exists
+            if (particle.userData.light) {
+                scene.remove(particle.userData.light);
+            }
+            
+            scene.remove(particle);
+            disposeObject(particle);
+            smokeParticles.splice(i, 1);
+            continue;
+        }
+        
+        // Make billboards face camera
+        if (particle.userData.isBillboard) {
+            particle.lookAt(camera.position);
+        }
+        
+        // Update position
+        if (particle.userData.velocity) {
+            tempVec3.copy(particle.userData.velocity).multiplyScalar(delta);
+            particle.position.add(tempVec3);
+        }
+        
+        // Update size for smoke
+        if (particle.userData.growRate) {
+            particle.scale.multiplyScalar(particle.userData.growRate);
+        }
+        
+        // Update rotation
+        if (particle.userData.rotationSpeed) {
+            particle.rotation.x += particle.userData.rotationSpeed.x * delta;
+            particle.rotation.y += particle.userData.rotationSpeed.y * delta;
+            particle.rotation.z += particle.userData.rotationSpeed.z * delta;
+        }
+        
+        // Update opacity
+        const lifeRatio = particle.userData.life / particle.userData.maxLife;
+        if (particle.material && particle.material.opacity !== undefined) {
+            particle.material.opacity = lifeRatio * 0.8;
+        }
+    }
+    
+    // Update explosion particles with improved behavior for different types
+    for (let i = explosionParticles.length - 1; i >= 0; i--) {
+        const particle = explosionParticles[i];
+        if (!particle) continue;
+        
+        // Update life
+        if (particle.userData.life !== undefined) {
+            particle.userData.life -= delta;
+            
+            // Remove if dead
+            if (particle.userData.life <= 0) {
+                scene.remove(particle);
+                disposeObject(particle);
+                explosionParticles.splice(i, 1);
+                continue;
+            }
+            
+            // Make billboards face camera 
+            if (particle.userData.isBillboard) {
+                particle.lookAt(camera.position);
+            }
+            
+            // Update position with velocity
+            if (particle.userData.velocity) {
+                // Apply acceleration if defined
+                if (particle.userData.acceleration) {
+                    particle.userData.velocity.add(
+                        particle.userData.acceleration.clone().multiplyScalar(delta)
+                    );
+                }
+                
+                // Apply gravity for debris particles
+                if (particle.userData.gravity) {
+                    particle.userData.velocity.y -= particle.userData.gravity * delta;
+                }
+                
+                // Apply drag if specified
+                if (particle.userData.drag) {
+                    particle.userData.velocity.multiplyScalar(1 - (particle.userData.drag * delta));
+                }
+                
+                // Update position
+                tempVec3.copy(particle.userData.velocity).multiplyScalar(delta);
+                particle.position.add(tempVec3);
+            }
+            
+            // Calculate life ratio for effects
+            const lifeRatio = particle.userData.life / particle.userData.maxLife;
+            
+            // Handle specific particle types
+            if (particle.userData.isFireball) {
+                // Enhanced fireball behavior with growth phase
+                if (particle.userData.growthPhase && 
+                    lifeRatio > (1 - particle.userData.growthTime / particle.userData.maxLife)) {
+                    // Growth phase - expand rapidly
+                    const growthProgress = (1 - lifeRatio) / (particle.userData.growthTime / particle.userData.maxLife);
+                    const targetScale = particle.userData.initialScale * 
+                        (1 + growthProgress * (particle.userData.maxGrowth - 1));
+                    
+                    particle.scale.set(targetScale, targetScale, 1);
+                } else {
+                    // Decay phase - slowly shrink
+                    particle.userData.growthPhase = false;
+                    const size = particle.scale.x * 0.98;
+                    particle.scale.set(size, size, 1);
+                }
+                
+                // Update color/intensity through shader uniforms
+                if (particle.material && particle.material.uniforms) {
+                    particle.material.uniforms.time.value += delta;
+                }
+                
+                // Update opacity based on life
+                if (particle.material && particle.material.uniforms && particle.material.uniforms.color) {
+                    // Fade out more rapidly at the end
+                    const opacity = lifeRatio < 0.3 ? lifeRatio * lifeRatio * 3 : lifeRatio;
+                    
+                    // Also shift color from yellow->orange->red as it ages
+                    const color = particle.material.uniforms.color.value;
+                    if (lifeRatio < 0.5) {
+                        // Shift toward red in the second half of life
+                        color.g = 0.8 * lifeRatio + 0.2;
+                        color.b = 0.2 * lifeRatio;
+                    }
+                }
+            } 
+            else if (particle.userData.isDebris) {
+                // Debris stretches in direction of movement
+                if (particle.userData.velocity.lengthSq() > 1) {
+                    // Calculate direction of travel
+                    const direction = particle.userData.velocity.clone().normalize();
+                    
+                    // Calculate stretch factor based on speed
+                    const speed = particle.userData.velocity.length();
+                    const stretchFactor = Math.min(3, 1 + speed * 0.02);
+                    
+                    // Apply stretch to scale
+                    const baseScale = particle.userData.initialScale * (lifeRatio * 0.8 + 0.2);
+                    particle.scale.set(
+                        baseScale * stretchFactor,
+                        baseScale,
+                        1
+                    );
+                    
+                    // Align with velocity direction
+                    const upVector = new THREE.Vector3(0, 1, 0);
+                    particle.quaternion.setFromUnitVectors(upVector, direction);
+                    
+                    // Then face camera (billboarded debris)
+                    particle.lookAt(camera.position);
+                }
+                
+                // Update color through shader
+                if (particle.material && particle.material.uniforms) {
+                    particle.material.uniforms.time.value += delta;
+                }
+            }
+            else if (particle.userData.isWave) {
+                // Wave particles expand outward
+                if (particle.userData.growRate) {
+                    particle.scale.multiplyScalar(particle.userData.growRate * 
+                        (0.95 + 0.1 * Math.cos(Date.now() * 0.01))); // Slight pulsing
+                }
+                
+                // Update color and opacity
+                if (particle.material && particle.material.uniforms) {
+                    particle.material.uniforms.time.value += delta;
+                    
+                    // Fade out more aggressively
+                    const fadeRatio = Math.pow(lifeRatio, particle.userData.fadeRate);
+                    particle.material.opacity = fadeRatio;
+                }
+            }
+            else {
+                // Generic explosion particles
+                // Scale down as they age
+                const scale = particle.userData.initialScale * (lifeRatio * 0.7 + 0.3);
+                particle.scale.set(scale, scale, 1);
+                
+                // Update shader time if it exists
+                if (particle.material && particle.material.uniforms && particle.material.uniforms.time) {
+                    particle.material.uniforms.time.value += delta;
+                }
+            }
+        }
+    }
+}
+    
+        
+        function updateHUD() {
+            if (!gameActive) return;
+            
+            // Update flight time
+            elapsedTime = (Date.now() - startTime) / 1000;
+            document.getElementById('flightTime').textContent = elapsedTime.toFixed(1);
+            
+            // Update targets
+            document.getElementById('targetsRemaining').textContent = stats.targetsRemaining;
+            document.getElementById('targetsDestroyed').textContent = stats.targetsDestroyed;
+            document.getElementById('crashes').textContent = stats.crashes;
+            document.getElementById('avgFlightTime').textContent = avgFlightTime.toFixed(1);
+            document.getElementById('direction').textContent = getCardinalDirection(missileDirection);
+            document.getElementById('altitude').textContent = Math.round(missile.position.y);
+            document.getElementById('speed').textContent = Math.round(velocity * 100); // Scale for display
+            
+
+             // Update the score
+             updateScore();
+            document.getElementById('score').textContent = Math.floor(score);
+        }
+        
+        function checkCollisions() {
+            if (!gameActive || resetDelay > 0 || !missile.visible) return;
+            
+            // Missile dimensions
+            const missileLength = 7;
+            const missileRadius = 0.8;
+            
+            // Check ground collision
+            if (missile.position.y < missileRadius) {
+                handleCrash();
+                return;
+            }
+            
+             // Calculate missile front and back points properly
+              tempVec3.copy(missileDirection).multiplyScalar(missileLength/2);
+            const missileForwardPoint = tempVec4.copy(missile.position).add(tempVec3);
+
+            tempVec3.copy(missileDirection).multiplyScalar(-missileLength/2);
+            const missileBackPoint = tempVec5.copy(missile.position).add(tempVec3);
+    
+       
+    // Check building collisions with improved cylinder-shaped hitbox
+    for (let i = 0; i < buildings.length; i++) {
+        const building = buildings[i];
+
+        const buildingHalfWidth = building.userData.width / 2;
+        const buildingHalfHeight = building.userData.height / 2;
+        
+         // Reuse the same Box3 and Vector3 objects
+         reusableVec1.set(
+            building.position.x - buildingHalfWidth,
+            building.position.y - buildingHalfHeight,
+            building.position.z - buildingHalfWidth
+        );
+        reusableVec2.set(
+            building.position.x + buildingHalfWidth,
+            building.position.y + buildingHalfHeight, 
+            building.position.z + buildingHalfWidth
+        );
+        reusableBox.setFromPoints([reusableVec1, reusableVec2]);
+        
+        // Check if any part of the missile cylinder is inside the building
+        // We'll simplify this by checking a few points along the missile axis
+        const checkPoints = 5;
+        let collision = false;
+        
+        for (let j = 0; j <= checkPoints; j++) {
+            const t = j / checkPoints;
+            const checkPoint = new THREE.Vector3().lerpVectors(missileBackPoint, missileForwardPoint, t);
+            
+            // Only check if the point is within the approximate bounding box
+            if (reusableBox.containsPoint(checkPoint)) {
+                // Calculate precise distance from center line of missile
+                const pointOnAxis = new THREE.Vector3().lerpVectors(
+                    missile.position, 
+                    checkPoint,
+                    missileDirection.dot(checkPoint.clone().sub(missile.position))
+                );
+                const distFromAxis = checkPoint.distanceTo(pointOnAxis);
+                
+                // If distance is less than missile radius, we have a collision
+                if (distFromAxis <= missileRadius + 0.2) { // small buffer
+                    collision = true;
+                    break;
+                }
+            }
+        }
+        
+        if (collision) {
+        // Get actual impact point using the collision point
+        let impactPoint;
+        let hitFace = -1;
+
+        for (let j = 0; j <= checkPoints; j++) {
+        const t = j / checkPoints;
+        const checkPoint = new THREE.Vector3().lerpVectors(missileBackPoint, missileForwardPoint, t);
+        
+        if (reusableBox.containsPoint(checkPoint)) {
+            impactPoint = checkPoint.clone();
+            
+            // Determine which face was hit
+            const buildingHalfWidth = building.userData.width / 2;
+            const buildingHalfHeight = building.userData.height / 2;
+            
+            // Calculate distance to each face from impact point
+            const distToTop = Math.abs(impactPoint.y - (building.position.y + buildingHalfHeight));
+            const distToBottom = Math.abs(impactPoint.y - (building.position.y - buildingHalfHeight));
+            const distToFront = Math.abs(impactPoint.z - (building.position.z + buildingHalfWidth));
+            const distToBack = Math.abs(impactPoint.z - (building.position.z - buildingHalfWidth));
+            const distToLeft = Math.abs(impactPoint.x - (building.position.x - buildingHalfWidth));
+            const distToRight = Math.abs(impactPoint.x - (building.position.x + buildingHalfWidth));
+            
+            // Find the closest face
+            const minDist = Math.min(distToTop, distToBottom, distToFront, distToBack, distToLeft, distToRight);
+            if (minDist === distToTop) hitFace = 0;
+            else if (minDist === distToBottom) hitFace = 1;
+            else if (minDist === distToFront) hitFace = 2;
+            else if (minDist === distToBack) hitFace = 3;
+            else if (minDist === distToLeft) hitFace = 4;
+            else if (minDist === distToRight) hitFace = 5;
+            
+            break;
+        }
+    }
+        
+        // If we don't have an impact point, use missile position
+        if (!impactPoint) {
+            impactPoint = missile.position.clone();
+        }
+        
+         // Check if it's a target
+    if (building.userData.isTarget) {
+        handleTargetHit(building, impactPoint); // Pass impact point
+    } else {
+        // handle the crash
+        handleCrash(impactPoint, false);
+    }
+    return;
+}
+}
+}  
+        
+    function handleCrash(impactPoint, createGroundScorch = true) {
+        // Add static flag to prevent multiple calls
+    if (handleCrash.inProgress) return;
+    handleCrash.inProgress = true;
+
+    createExplosion(impactPoint || missile.position.clone(), true, createGroundScorch);
+        playSound('crash');
+        stopFlightSounds();
+        stats.crashes++;
+          finishFlight();
+    
+          // Set camera target and delay
+          cameraTarget = missile.position.clone();
+           resetDelay = 2.0; // Wait 2 seconds before resetting
+    
+          // Hide missile
+           missile.visible = false;
+
+           // Reset the flag after reset delay
+        setTimeout(() => { 
+        handleCrash.inProgress = false;
+    }, 2100);
+        }
+        
+        function handleTargetHit(target, impactPoint) {
+            // Ensure this is actually a target building
+        if (!target || !target.userData || !target.userData.isTarget) {
+        handleCrash(impactPoint, false); // Treat as a normal crash instead
+        return;
+         }
+            createExplosion(impactPoint || target.position.clone(), true, false);
+            playSound('target');
+            stopFlightSounds();
+
+            // Store target position before removal for ground scorch
+            const targetPosition = target.position.clone();
+            const buildingWidth = target.userData.width;
+            
+             // Set camera target and delay
+            cameraTarget = targetPosition;
+            resetDelay = 2.0; // Wait 2 seconds before resetting
+    
+              // Hide missile
+             missile.visible = false;
+            
+             // Find surrounding buildings that should be damaged by the explosion
+        buildings.forEach(building => {
+           if (building !== target && 
+        building.position.distanceTo(targetPosition) < 30 && 
+        !damagedBuildings.includes(building)) {
+        
+        // Add to damaged buildings list so they emit smoke
+        damagedBuildings.push(building);
+        
+        // Initial smoke burst
+             for (let i = 0; i < 3; i++) { // Reduced from 5 to 3
+            createBuildingSmoke(building);
+            }
+            }
+          });
+                      
+            // Remove target from scene and arrays
+            scene.remove(target);
+            const targetIndex = buildings.indexOf(target);
+            if (targetIndex > -1) {
+                buildings.splice(targetIndex, 1);
+            }
+            
+            const targetBuildingIndex = targetBuildings.indexOf(target);
+            if (targetBuildingIndex > -1) {
+                targetBuildings.splice(targetBuildingIndex, 1);
+            }
+
+            // Create scorch mark on ground
+            const scorchPosition = new THREE.Vector3(targetPosition.x, -0.3, targetPosition.z);
+            createScorchMark(scorchPosition, false); // false = on ground, not building
+            // Make it slightly larger than normal 
+            const lastScorch = scorchMarks[scorchMarks.length - 1];
+            if (lastScorch) {
+        const scorchSize = buildingWidth * 1.2; // Slightly bigger than building base
+        lastScorch.scale.set(scorchSize, scorchSize, 1); // No more division by 8
+        
+        if (lastScorch.userData.emberEffect) {
+            lastScorch.userData.emberEffect.scale.set(scorchSize * 0.8, scorchSize * 0.8, 1);
+        }
+              // Make this scorch produce more smoke
+            lastScorch.userData.smokeIntensity = 1.5;
+             }
+
+             createSmokeColumn(scorchPosition, 20); // Create a 20-unit tall smoke column
+
+            // Update stats
+            stats.targetsDestroyed++;
+            stats.targetsRemaining--;
+            
+            // Check if all targets are destroyed
+            if (stats.targetsRemaining <= 0) {
+                setTimeout(() => {
+                showGameOver();
+              }, 3000); // 3 second delay
+                return;
+            }
+            
+            finishFlight();
+            
+        }
+
+    
+    
+
+
+function cleanupScorchMarks() {
+    // Remove old scorch marks
+    for (let i = scorchMarks.length - 1; i >= 0; i--) {
+        const scorch = scorchMarks[i];
+        const age = Date.now() - scorch.userData.creationTime;
+        
+        if (age > scorch.userData.flickerDuration) {
+            if (scorch.userData.flickerInterval) {
+                clearInterval(scorch.userData.flickerInterval);
+            }
+            if (scorch.userData.emberEffect) {
+                disposeObject(scorch.userData.emberEffect);
+            }
+            disposeObject(scorch);
+            scorchMarks.splice(i, 1);
+        } else {
+            // Update opacity based on age
+            const lifePercent = age / scorch.userData.flickerDuration;
+            if (lifePercent > 0.7) { // Start fading after 70% of lifetime
+                // We don't need to update opacity here - the global timer does this
+            }
+        }
+    }
+}
+        
+        function finishFlight() {
+            // Calculate flight time and update average
+            const flightTime = (Date.now() - startTime) / 1000;
+            flightTimes.push(flightTime);
+            
+            // Calculate average flight time
+            let sum = 0;
+            for (let i = 0; i < flightTimes.length; i++) {
+                sum += flightTimes[i];
+            }
+            avgFlightTime = sum / flightTimes.length;
+        }
+        
+        function showGameOver() {
+     gameActive = false;
+     stopFlightSounds(); 
+     
+     if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+        animationFrameId = null;
+     }
+     
+     document.getElementById('gameOverScreen').style.display = 'block';
+     document.getElementById('hud').style.display = 'none';
+     document.getElementById('minimap').style.display = 'none';
+     
+     document.getElementById('gameOverStats').innerHTML = `
+        <p><strong>▶ Targets destroyed:</strong> ${stats.targetsDestroyed}</p>
+        <p><strong>▶ Crashes:</strong> ${stats.crashes}</p>
+        <p><strong>▶ Average flight time:</strong> ${avgFlightTime.toFixed(1)}s</p>
+        <p style="font-size: 24px; color: #ff3333; margin-top: 15px;"><strong>FINAL SCORE: ${Math.floor(score)}</strong></p>
+     `;
+}
+        
+
+        
+        function restartGame() {
+            document.getElementById('gameOverScreen').style.display = 'none';
+            document.getElementById('hud').style.display = 'block';
+            document.getElementById('minimap').style.display = 'block';
+            createHudElements(); // Create HUD elements again
+            
+            // Reset game state
+            stats.targetsRemaining = 0;
+            stats.targetsDestroyed = 0;
+            stats.crashes = 0;
+            flightTimes = [];
+            avgFlightTime = 0;
+            
+            // Clear old buildings
+            for (let i = buildings.length - 1; i >= 0; i--) {
+                disposeObject(buildings[i]);
+            }
+            buildings = [];
+            targetBuildings = [];
+
+            // Clear old scorch marks
+    for (let i = scorchMarks.length - 1; i >= 0; i--) {
+        disposeObject(scorchMarks[i]);
+        scorchMarks.splice(i, 1);
+    }
+
+    if (globalScorchTimer) {
+    clearInterval(globalScorchTimer);
+    globalScorchTimer = null;
+}
+    
+    // Clear old enemy missiles
+    for (let i = enemyMissiles.length - 1; i >= 0; i--) {
+        disposeObject(enemyMissiles[i]);
+        enemyMissiles.splice(i, 1);
+    }
+    
+    // Clear particles
+    for (let i = smokeParticles.length - 1; i >= 0; i--) {
+        disposeObject(smokeParticles[i]);
+        smokeParticles.splice(i, 1);
+    }
+    
+    for (let i = explosionParticles.length - 1; i >= 0; i--) {
+        disposeObject(explosionParticles[i]);
+        explosionParticles.splice(i, 1);
+    }
+
+    // Clean up event listeners before restarting
+    window.removeEventListener('resize', onWindowResize);
+    document.removeEventListener('keydown', onKeyDown);
+    document.removeEventListener('keyup', onKeyUp);
+    if (window.DeviceOrientationEvent) {
+    window.removeEventListener('deviceorientation', handleDeviceOrientation);
+    }
+
+    // Re-attach them
+    window.addEventListener('resize', onWindowResize);
+    document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('keyup', onKeyUp);
+    if (window.DeviceOrientationEvent) {
+    window.addEventListener('deviceorientation', handleDeviceOrientation);
+    }
+            
+            // Create new city
+            createCity();
+            
+            gameActive = true;
+            resetMissile();
+
+            // Start launch animation
+            launchAnimation = true;
+             launchAnimationTime = 0;
+    
+             // explicitly play sounds at restart
+              playSound('ui');
+             playSound('missile');
+
+            lastTime = 0;  // Reset time tracking
+            animationFrameId = requestAnimationFrame(animate);
+        }
+        
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+        
+        function onKeyDown(event) {
+    // Convert event.code to key name in our object
+    const key = event.code;
+    if (key in keys) {
+        keys[key] = true;
+        
+        if (key === 'Space') {
+            isAccelerating = true;
+            updateFlightSound(true);
+        }
+        
+        // Prevent scrolling with arrow keys
+        event.preventDefault();
+    }
+}
+        
+function onKeyUp(event) {
+    const key = event.code;
+    if (key in keys) {
+        keys[key] = false;
+        
+        if (key === 'Space') {
+            isAccelerating = false;
+            updateFlightSound(false);
+        }
+    }
+}
+        
+function handleDeviceOrientation(event) {
+    if (!gameActive || !isMobile) return;
+    
+    // alpha: rotation around z-axis (0-360)
+    // beta: front-back tilt (-180 to 180, front is positive)
+    // gamma: left-right tilt (-90 to 90, right is positive)
+    const alpha = event.alpha || 0;
+    const beta = event.beta || 0;
+    const gamma = event.gamma || 0;
+    
+    // Store initial orientation on first reading if not calibrated
+    if (!window.hasOwnProperty('calibratedOrientation')) {
+        window.calibratedOrientation = {
+            alpha: alpha,
+            beta: beta,
+            gamma: gamma,
+            initialized: true
+        };
+        
+        // Create recalibrate button
+        const calibrateBtn = document.createElement('button');
+        calibrateBtn.innerHTML = '🔄 Calibrate';
+        calibrateBtn.style.position = 'absolute';
+        calibrateBtn.style.bottom = '10px';
+        calibrateBtn.style.left = '10px';
+        calibrateBtn.style.padding = '8px 12px';
+        calibrateBtn.style.fontSize = '14px';
+        calibrateBtn.style.backgroundColor = 'rgba(0,0,0,0.5)';
+        calibrateBtn.style.color = 'white';
+        calibrateBtn.style.border = 'none';
+        calibrateBtn.style.borderRadius = '5px';
+        calibrateBtn.style.zIndex = '2000';
+        
+        calibrateBtn.addEventListener('click', function() {
+            // Recalibrate based on current orientation
+            window.calibratedOrientation = {
+                alpha: alpha,
+                beta: beta,
+                gamma: gamma,
+                initialized: true
+            };
+            
+            // Show feedback
+            const feedback = document.createElement('div');
+            feedback.textContent = 'Controls Calibrated!';
+            feedback.style.position = 'absolute';
+            feedback.style.top = '50%';
+            feedback.style.left = '50%';
+            feedback.style.transform = 'translate(-50%, -50%)';
+            feedback.style.backgroundColor = 'rgba(0,0,0,0.7)';
+            feedback.style.color = 'white';
+            feedback.style.padding = '10px 20px';
+            feedback.style.borderRadius = '5px';
+            feedback.style.zIndex = '2001';
+            document.body.appendChild(feedback);
+            
+            setTimeout(() => {
+                document.body.removeChild(feedback);
+            }, 2000);
+        });
+        
+        document.body.appendChild(calibrateBtn);
+    }
+    
+    // Calculate relative orientation based on calibrated values
+    const relBeta = beta - window.calibratedOrientation.beta;
+    const relGamma = gamma - window.calibratedOrientation.gamma;
+    
+    // Map the orientation to missile controls:
+    
+    // 1. Left/Right turns (gamma)
+    // When device is tilted left/right, turn missile
+    // -30 to +30 degrees for full turn
+    const yawInput = clamp(relGamma / 30, -1, 1);
+    
+    // 2. Up/Down controls (beta)
+    // Device facing up = missile down, device facing down = missile up
+    // We want neutral to be perpendicular to ground (beta = 90)
+    const pitchOffset = 90 - beta;
+    const pitchInput = clamp(pitchOffset / 30, -1, 1);
+    
+    // Apply to missile controls
+    keys.ArrowLeft = yawInput < -0.15;
+    keys.ArrowRight = yawInput > 0.15;
+    keys.ArrowUp = pitchInput > 0.15;
+    keys.ArrowDown = pitchInput < -0.15;
+    
+    // For more precise analog controls, store the actual values too
+    missile.userData.mobileControls = {
+        yawInput: yawInput,
+        pitchInput: pitchInput
+    };
+}
+
+// Helper function to clamp values
+function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+}
+
+// Update the updateMissile function to use analog controls on mobile
+function updateMissileForMobile() {
+    // Add this code in your updateMissile function
+    
+    // Get input values - on mobile, use analog values for smoother control
+    let pitchInput, yawInput;
+    
+    if (isMobile && missile.userData.mobileControls) {
+        // Use analog values from mobile
+        pitchInput = -missile.userData.mobileControls.pitchInput;
+        yawInput = missile.userData.mobileControls.yawInput;
+    } else {
+        // Use keyboard controls (digital)
+        pitchInput = (keys.ArrowUp ? -1 : 0) + (keys.ArrowDown ? 1 : 0);
+        yawInput = (keys.ArrowLeft ? 1 : 0) + (keys.ArrowRight ? -1 : 0);
+    }
+    
+    // Apply to turn velocity with damping
+    turnVelocity.x = turnVelocity.x * damping + (pitchInput * turnSpeed) * (1 - damping);
+    turnVelocity.y = turnVelocity.y * damping + (yawInput * turnSpeed) * (1 - damping);
+}
+    
+    function updateMissile(delta) {
+    if (!gameActive) return;
+
+    const dt = delta;
+
+    // Apply acceleration/deceleration
+    if (isAccelerating) {
+        velocity = Math.min(velocity + acceleration * dt, maxVelocity);
+    } else {
+        velocity = Math.max(velocity - acceleration * dt * 0.6, baseVelocity);
+    }
+    
+    // Get input values
+    const pitchInput = (keys.ArrowUp ? -1 : 0) + (keys.ArrowDown ? 1 : 0);
+    const yawInput = (keys.ArrowLeft ? 1 : 0) + (keys.ArrowRight ? -1 : 0);
+    const rollInput = (keys.KeyQ ? 1 : 0) + (keys.KeyE ? -1 : 0);
+
+    // Calculate control rates with damping
+    turnVelocity.x = turnVelocity.x * damping + (pitchInput * turnSpeed) * (1 - damping);
+    turnVelocity.y = turnVelocity.y * damping + (yawInput * turnSpeed) * (1 - damping);
+    turnVelocity.z = turnVelocity.z * damping + (rollInput * turnSpeed * 1.5) * (1 - damping);
+    
+    // Define our reference axes based on current missile orientation
+    // Forward is always the missile's current direction
+    const forward = missileDirection.clone();
+    
+    // Get the world up vector
+    const worldUp = new THREE.Vector3(0, 1, 0);
+    
+    // Calculate missile's right vector using world up as a reference
+    // This ensures we always have a stable reference frame
+    const right = new THREE.Vector3().crossVectors(forward, worldUp).normalize();
+    
+    // If we're close to vertical, right might be very small, so handle that case
+    if (right.lengthSq() < 0.01) {
+        // In near-vertical alignment, use a fixed horizontal reference
+        right.set(1, 0, 0);
+    }
+    
+    // Calculate missile's local up vector from right and forward
+    const up = new THREE.Vector3().crossVectors(right, forward).normalize();
+    
+    // Apply pitch (rotate around right vector)
+    const pitchQuat = new THREE.Quaternion().setFromAxisAngle(
+        right, turnVelocity.x * dt * 60
+    );
+    
+    // Apply yaw (rotate around up vector)
+    const yawQuat = new THREE.Quaternion().setFromAxisAngle(
+        up, turnVelocity.y * dt * 60
+    );
+    
+    // Apply roll (rotate around forward vector)
+    const rollQuat = new THREE.Quaternion().setFromAxisAngle(
+        forward, turnVelocity.z * dt * 60
+    );
+    
+    // Combine all rotations
+    const combinedQuat = new THREE.Quaternion().multiply(yawQuat).multiply(pitchQuat);
+    
+    // Apply to missile direction
+    missileDirection.applyQuaternion(combinedQuat);
+    missileDirection.normalize();
+    
+    // Calculate final missile orientation
+    const baseOrientation = new THREE.Quaternion().setFromUnitVectors(
+        new THREE.Vector3(0, 1, 0), missileDirection
+    );
+    
+    // Apply roll separately to the visual model
+    missile.quaternion.copy(baseOrientation).multiply(rollQuat);
+    
+    // Update exhaust
+    updateMissileExhaust();
+}
+
+function createScorchMark(position, isOnBuilding = false) {
+    // Limit total scorch marks
+    if (scorchMarks.length > 75) {
+        const oldestScorch = scorchMarks.shift();
+        if (oldestScorch.userData.emberEffect) {
+            disposeObject(oldestScorch.userData.emberEffect);
+        }
+        disposeObject(oldestScorch);
+    }
+    
+    // Create star-shaped scorch texture if it doesn't exist
+    if (!window.scorchTexture) {
+        // [Keep existing star-shaped scorch texture creation code]
+        const canvas = document.createElement('canvas');
+        canvas.width = 256;
+        canvas.height = 256;
+        const ctx = canvas.getContext('2d');
+        
+        // Center point
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+        const outerRadius = canvas.width * 0.45;
+        const innerRadius = outerRadius * 0.4;
+        
+        ctx.beginPath();
+        const points = 16;
+        const jaggedPoints = 3;
+        let firstPoint = true;
+        
+        for (let i = 0; i < points; i++) {
+            const mainAngle = (Math.PI * 2 * i) / points;
+            
+            for (let j = 0; j <= jaggedPoints; j++) {
+                const subAngle = mainAngle + (Math.PI * 2 / points) * (j / jaggedPoints);
+                
+                const flareChance = Math.random();
+                const radiusMult = flareChance < 0.2 ? 
+                    1.3 + Math.random() * 0.4 : 
+                    0.7 + Math.random() * 0.6;
+                    
+                const radius = innerRadius + (outerRadius - innerRadius) * radiusMult;
+                
+                const x = centerX + Math.cos(subAngle) * radius;
+                const y = centerY + Math.sin(subAngle) * radius;
+                
+                if (firstPoint) {
+                    ctx.moveTo(x, y);
+                    firstPoint = false;
+                } else {
+                    ctx.lineTo(x, y);
+                }
+            }
+        }
+        
+        ctx.closePath();
+        
+        const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, outerRadius);
+        gradient.addColorStop(0, 'rgba(0, 0, 0, 0.95)');
+        gradient.addColorStop(0.4, 'rgba(20, 20, 20, 0.85)');
+        gradient.addColorStop(0.7, 'rgba(30, 30, 30, 0.7)');
+        gradient.addColorStop(0.9, 'rgba(40, 40, 40, 0.3)');
+        gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        
+        ctx.fillStyle = gradient;
+        ctx.fill();
+        
+        ctx.globalCompositeOperation = 'source-atop';
+        for (let i = 0; i < 800; i++) {
+            const x = Math.random() * canvas.width;
+            const y = Math.random() * canvas.height;
+            const radius = Math.random() * 2 + 0.5;
+            const opacity = Math.random() * 0.3;
+            
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(0, 0, 0, ${opacity})`;
+            ctx.fill();
+        }
+        
+        window.scorchTexture = new THREE.CanvasTexture(canvas);
+        window.scorchTexture.minFilter = THREE.LinearFilter;
+    }
+    
+    // Create ember texture if needed
+    if (!window.emberTexture) {
+        // [Keep existing ember texture creation code]
+        const emberCanvas = document.createElement('canvas');
+        emberCanvas.width = 256;
+        emberCanvas.height = 256;
+        const emberCtx = emberCanvas.getContext('2d');
+        
+        const centerX = emberCanvas.width / 2;
+        const centerY = emberCanvas.height / 2;
+        const outerRadius = emberCanvas.width * 0.4;
+        const innerRadius = outerRadius * 0.5;
+        
+        emberCtx.beginPath();
+        const starPoints = 12;
+        
+        for (let i = 0; i < starPoints * 2; i++) {
+            const angle = (Math.PI * 2 * i) / (starPoints * 2);
+            const radius = i % 2 === 0 ? outerRadius : innerRadius;
+            
+            const x = centerX + Math.cos(angle) * radius;
+            const y = centerY + Math.sin(angle) * radius;
+            
+            if (i === 0) emberCtx.moveTo(x, y);
+            else emberCtx.lineTo(x, y);
+        }
+        
+        emberCtx.closePath();
+        
+        const emberGradient = emberCtx.createRadialGradient(
+            centerX, centerY, 0, centerX, centerY, outerRadius);
+        emberGradient.addColorStop(0, 'rgba(255, 160, 30, 0.8)');
+        emberGradient.addColorStop(0.4, 'rgba(255, 80, 0, 0.5)');
+        emberGradient.addColorStop(0.7, 'rgba(255, 30, 0, 0.2)');
+        emberGradient.addColorStop(1, 'rgba(255, 0, 0, 0)');
+        
+        emberCtx.fillStyle = emberGradient;
+        emberCtx.fill();
+        
+        window.emberTexture = new THREE.CanvasTexture(emberCanvas);
+        window.emberTexture.minFilter = THREE.LinearFilter;
+    }
+    
+    // Create scorch mark using existing meshes
+    const scorchSize = isOnBuilding ? 3.0 : 8.0;
+    const scorchGeometry = new THREE.PlaneGeometry(scorchSize, scorchSize);
+    
+    const scorchMaterial = new THREE.MeshBasicMaterial({
+        map: window.scorchTexture,
+        transparent: true,
+        depthWrite: false,
+        side: THREE.DoubleSide
+    });
+    
+    const scorchMark = new THREE.Mesh(scorchGeometry, scorchMaterial);
+    scorchMark.position.copy(position);
+    
+    if (!isOnBuilding) {
+        scorchMark.rotation.x = -Math.PI / 2;
+        scorchMark.position.y = 0.01;
+    }
+    
+    // Add random rotation for variety
+    scorchMark.rotation.z = Math.random() * Math.PI * 2;
+    
+    // Add ember effect
+    const emberGeometry = new THREE.PlaneGeometry(scorchSize * 0.7, scorchSize * 0.7);
+    const emberMaterial = new THREE.MeshBasicMaterial({
+        map: window.emberTexture, 
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        side: THREE.DoubleSide
+    });
+    
+    const emberEffect = new THREE.Mesh(emberGeometry, emberMaterial);
+    emberEffect.position.copy(scorchMark.position);
+    emberEffect.rotation.copy(scorchMark.rotation);
+    emberEffect.position.y += 0.01;
+    emberEffect.rotation.z = scorchMark.rotation.z;
+    
+    scene.add(scorchMark);
+    scene.add(emberEffect);
+    
+    scorchMark.userData.emberEffect = emberEffect;
+    
+    // Set longer duration and higher smoke intensity for target hits
+    const isTargetHit = !isOnBuilding && position.y < 1.0; // Ground scorch from target hit
+    const flickerDuration = isOnBuilding ? 10000 : 20000;
+    const smokeIntensity = isTargetHit ? 2.0 : (isOnBuilding ? 0.8 : 1.2);
+    
+    // Configure scorch mark properties
+    scorchMark.userData = {
+        creationTime: Date.now(),
+        flickerDuration: flickerDuration,
+        emberEffect: emberEffect,
+        smokeEnabled: true,
+        smokeTimer: 0,
+        smokeIntensity: smokeIntensity,
+        isTargetHit: isTargetHit
+    };
+    
+    scorchMarks.push(scorchMark);
+    
+    // Start global timer if not running
+    if (!globalScorchTimer) {
+        startGlobalScorchTimer();
+    }
+    
+    return scorchMark;
+}
+
+
+function createExplosionTexture() {
+    // Create a single shared texture for all explosion particles
+    if (!window.explosionTexture) {
+        // Create the explosion texture procedurally
+        const canvas = document.createElement('canvas');
+        canvas.width = 128;
+        canvas.height = 128;
+        const ctx = canvas.getContext('2d');
+        
+        // Create multi-colored explosion gradient
+        const gradient = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+        gradient.addColorStop(0, 'rgba(255, 255, 220, 1.0)');    // Bright center
+        gradient.addColorStop(0.2, 'rgba(255, 200, 70, 0.9)');   // Yellow-orange
+        gradient.addColorStop(0.4, 'rgba(255, 60, 20, 0.8)');    // Red-orange
+        gradient.addColorStop(0.7, 'rgba(150, 20, 10, 0.5)');    // Dark red
+        gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');           // Transparent edge
+        
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, 128, 128);
+        
+        window.explosionTexture = new THREE.CanvasTexture(canvas);
+    }
+    
+    // Create a simple plane that will always face the camera
+    const explosionGeometry = new THREE.PlaneGeometry(1, 1);
+    const explosionMaterial = new THREE.MeshBasicMaterial({
+        map: window.explosionTexture,
+        transparent: true,
+        blending: THREE.AdditiveBlending,  // Additive blending for glow effect
+        depthWrite: false,
+        side: THREE.DoubleSide
+    });
+    
+    return { geometry: explosionGeometry, material: explosionMaterial };
+}
+
+
+
+function updateCamera(delta) {
+    if (!missile.visible) return;
+    
+    // Calculate target camera position
+    const targetCameraPos = missile.position.clone().sub(
+        missileDirection.clone().multiplyScalar(cameraOffset.z)
+    );
+    targetCameraPos.y += cameraOffset.y;
+    
+    const lookTarget = missile.position.clone().add(
+        missileDirection.clone().multiplyScalar(10)
+    );
+    
+    // Smooth movement
+    smoothedCameraPosition.lerp(targetCameraPos, cameraSmoothingFactor);
+    smoothedCameraLookAt.lerp(lookTarget, cameraSmoothingFactor);
+    
+    // Update camera position
+    camera.position.copy(smoothedCameraPosition);
+    
+    // Store reference space for vertical flight if not set
+    if (!camera.userData.verticalReferenceFrame) {
+        camera.userData.verticalReferenceFrame = {
+            forward: new THREE.Vector3(0, 0, 1),
+            right: new THREE.Vector3(1, 0, 0),
+            up: new THREE.Vector3(0, 1, 0)
+        };
+    }
+    
+    // Get world up and check vertical alignment
+    const worldUp = new THREE.Vector3(0, 1, 0);
+    const verticalAlignment = missileDirection.dot(worldUp);
+    const isNearVertical = Math.abs(verticalAlignment) > 0.95;
+    
+    if (isNearVertical) {
+        // Use stored reference frame to keep camera orientation stable
+        camera.up.copy(camera.userData.verticalReferenceFrame.up);
+    } else {
+        // Update reference frame for future vertical maneuvers
+        camera.userData.verticalReferenceFrame.forward.copy(missileDirection).normalize();
+        camera.userData.verticalReferenceFrame.right.crossVectors(worldUp, missileDirection).normalize();
+        camera.userData.verticalReferenceFrame.up.crossVectors(missileDirection, camera.userData.verticalReferenceFrame.right).normalize();
+        
+        // Smooth transition to world up when not vertical
+        camera.up.lerp(worldUp, cameraSmoothingFactor * 0.5);
+    }
+    
+    camera.lookAt(smoothedCameraLookAt);
+}
+        
+function updateMinimap() {
+    if (!gameActive) return;
+    
+    // Update player marker position only
+    playerMarker.position.x = missile.position.x;
+    playerMarker.position.z = missile.position.z;
+    
+    // No need to update rotation for a circle
+    
+    // Update and render
+    updateMinimapBuildings();
+    minimapRenderer.render(minimapScene, minimapCamera);
+}
+
+    // Function to update building representations in minimap
+    function updateMinimapBuildings() {
+    // Hide all dots from previous frame
+    minimapBuildingDots.forEach(dot => {
+        dot.visible = false;
+    });
+    
+    let targetCount = 0;
+    let regularCount = 0;
+    
+    // Update positions of existing dots or create new ones as needed
+    buildings.forEach(building => {
+        let dot;
+        
+        if (building.userData.isTarget) {
+            // Use a target dot from pool or create new one
+            if (targetCount < minimapDotPool.target.length) {
+                dot = minimapDotPool.target[targetCount];
+            } else {
+                dot = new THREE.Mesh(minimapDotPool.geometryTarget, minimapDotPool.materialTarget);
+                dot.rotation.x = -Math.PI / 2;
+                minimapScene.add(dot);
+                minimapDotPool.target.push(dot);
+                minimapBuildingDots.push(dot);
+            }
+            targetCount++;
+        } else {
+            // Use a regular dot from pool or create new one
+            if (regularCount < minimapDotPool.regular.length) {
+                dot = minimapDotPool.regular[regularCount];
+            } else {
+                dot = new THREE.Mesh(minimapDotPool.geometryRegular, minimapDotPool.materialRegular);
+                dot.rotation.x = -Math.PI / 2;
+                minimapScene.add(dot);
+                minimapDotPool.regular.push(dot);
+                minimapBuildingDots.push(dot);
+            }
+            regularCount++;
+        }
+        
+        // Update position and make visible
+        dot.position.set(building.position.x, 0, building.position.z);
+        dot.visible = true;
+    });
+}
+
+
+    function createEnemyMissile() {
+    // Choose random edge of map to spawn from
+    const spawnIndex = Math.floor(Math.random() * spawnPoints.length);
+    const spawnPosition = spawnPoints[spawnIndex].clone();
+    
+    // Small random variation in spawn position
+    spawnPosition.x += THREE.MathUtils.randFloatSpread(100);
+    spawnPosition.z += THREE.MathUtils.randFloatSpread(100);
+    spawnPosition.y = THREE.MathUtils.randFloat(80, 120);
+    
+    // Create enemy missile
+    const enemyMissile = new THREE.Group();
+    
+    // Body (slightly different from player's missile)
+    const bodyGeometry = new THREE.CylinderGeometry(0.8, 0.8, 7, 16);
+    const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0x5C5C5C });
+    const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+    body.castShadow = false;
+    enemyMissile.add(body);
+    
+    // Nose cone
+    const noseGeometry = new THREE.ConeGeometry(0.8, 2.5, 16);
+    const noseMaterial = new THREE.MeshStandardMaterial({ color: 0x999999 });
+    const nose = new THREE.Mesh(noseGeometry, noseMaterial);
+    nose.position.y = 4.5;
+    nose.castShadow = false;
+    enemyMissile.add(nose);
+    
+    // Fins
+    const finGeometry = new THREE.BoxGeometry(0.2, 1.5, 2.5);
+    const finMaterial = new THREE.MeshStandardMaterial({ color: 0x242424 });
+    
+    for (let i = 0; i < 4; i++) {
+        const fin = new THREE.Mesh(finGeometry, finMaterial);
+        fin.position.y = -2.5;
+        fin.castShadow = false;
+        
+        // Position fins around the missile
+        fin.rotation.y = (Math.PI / 2) * i;
+        fin.position.x = Math.sin((Math.PI / 2) * i) * 1.0;
+        fin.position.z = Math.cos((Math.PI / 2) * i) * 1.0;
+        
+        enemyMissile.add(fin);
+    }
+    
+    // Add missile to scene
+    enemyMissile.rotation.x = Math.PI / 2; // Point forward
+    enemyMissile.position.copy(spawnPosition);
+    scene.add(enemyMissile);
+    
+    // Choose target building - prioritize target buildings
+    let targetBuilding;
+    if (targetBuildings.length > 0) {
+        // 70% chance to target a red target building
+        if (Math.random() < 0.7) {
+            targetBuilding = targetBuildings[Math.floor(Math.random() * targetBuildings.length)];
+        } else if (buildings.length > 0) {
+            targetBuilding = buildings[Math.floor(Math.random() * buildings.length)];
+        }
+    } else if (buildings.length > 0) {
+        targetBuilding = buildings[Math.floor(Math.random() * buildings.length)];
+    }
+    
+    // Set target position and direction
+    let targetPosition;
+    if (targetBuilding) {
+        targetPosition = targetBuilding.position.clone();
+        // Aim for the middle of the building
+        targetPosition.y = targetBuilding.userData.height / 2;
+    } else {
+        // Fallback to city center with some randomization
+        targetPosition = new THREE.Vector3(
+            THREE.MathUtils.randFloatSpread(citySize * 0.5),
+            0,
+            THREE.MathUtils.randFloatSpread(citySize * 0.5)
+        );
+    }
+    
+    // Calculate initial direction
+    const direction = new THREE.Vector3()
+        .subVectors(targetPosition, spawnPosition)
+        .normalize();
+    
+    // Save properties
+    enemyMissile.userData = {
+        direction: direction,
+        speed: THREE.MathUtils.randFloat(0.4, 0.8), // Slightly faster
+        smokeTimer: 0,
+        targetPosition: targetPosition,
+        targetBuilding: targetBuilding,
+        guidanceAccuracy: THREE.MathUtils.randFloat(0.85, 0.98) // How accurately it tracks (different per missile)
+    };
+    
+    // Align missile with direction
+    const missileRotation = new THREE.Quaternion().setFromUnitVectors(
+        new THREE.Vector3(0, 1, 0), 
+        direction
+    );
+    enemyMissile.quaternion.copy(missileRotation);
+    
+    // Add to enemy missiles array
+    enemyMissiles.push(enemyMissile);
+}   
+
+// Update enemy missiles
+function updateEnemyMissiles(delta) {
+    // Spawn new enemy missiles
+    if (gameActive && stats.targetsRemaining > 0) {
+        enemyMissileTimer += delta;
+        
+        if (enemyMissileTimer >= enemyMissileSpawnRate && enemyMissiles.length < maxEnemyMissiles) {
+            createEnemyMissile();
+            enemyMissileTimer = 0;
+        }
+    }
+    
+    // Update existing enemy missiles
+    for (let i = enemyMissiles.length - 1; i >= 0; i--) {
+        const enemyMissile = enemyMissiles[i];
+        
+        // Check if target still exists
+        if (enemyMissile.userData.targetBuilding && 
+            !buildings.includes(enemyMissile.userData.targetBuilding)) {
+            
+            // Target was destroyed, select a new one or aim at city center
+            if (buildings.length > 0) {
+                const newTarget = buildings[Math.floor(Math.random() * buildings.length)];
+                enemyMissile.userData.targetBuilding = newTarget;
+                enemyMissile.userData.targetPosition = newTarget.position.clone();
+                enemyMissile.userData.targetPosition.y = newTarget.userData.height / 2;
+            } else {
+                enemyMissile.userData.targetBuilding = null;
+                enemyMissile.userData.targetPosition = new THREE.Vector3(0, 0, 0);
+            }
+        }
+        
+        // Calculate new direction to target with guidance
+        if (enemyMissile.userData.targetPosition) {
+            const newDirection = new THREE.Vector3()
+                .subVectors(enemyMissile.userData.targetPosition, enemyMissile.position)
+                .normalize();
+                
+            // Gradually adjust direction based on guidance accuracy
+            enemyMissile.userData.direction.lerp(
+                newDirection, 
+                delta * 2 * enemyMissile.userData.guidanceAccuracy
+            ).normalize();
+            
+            // Align missile with its current direction
+            const missileRotation = new THREE.Quaternion().setFromUnitVectors(
+                new THREE.Vector3(0, 1, 0), 
+                enemyMissile.userData.direction
+            );
+            enemyMissile.quaternion.copy(missileRotation);
+        }
+        
+        // Move missile
+        enemyMissile.position.add(
+            enemyMissile.userData.direction.clone().multiplyScalar(enemyMissile.userData.speed * delta * 60)
+        );
+        
+        // Create smoke trail
+        enemyMissile.userData.smokeTimer -= delta;
+        if (enemyMissile.userData.smokeTimer <= 0) {
+            createEnemyMissileSmoke(enemyMissile);
+            enemyMissile.userData.smokeTimer = 0.4; // Smoke every 0.4 seconds
+        }
+        
+        // Check for collisions with buildings
+        const collided = checkEnemyMissileCollisions(enemyMissile, i);
+        if (collided) {
+        // Skip rest of loop if collision occurred
+        continue;
+    }
+        
+        // Check if missile has gone too far (missed completely)
+        if (enemyMissile.position.distanceTo(new THREE.Vector3(0, 0, 0)) > citySize * 3) {
+            scene.remove(enemyMissile);
+            enemyMissiles.splice(i, 1);
+        }
+    }
+}
+
+// Add adaptive resolution during intense action
+function adjustResolutionForPerformance() {
+    if (explosionParticles.length > 80) {
+        renderer.setPixelRatio(window.devicePixelRatio * 0.7);
+    } else {
+        renderer.setPixelRatio(window.devicePixelRatio);
+    }
+}
+
+// Check collisions for enemy missiles
+function checkEnemyMissileCollisions(enemyMissile, index) {
+    // Simplified collision check with more reliable detection
+    const missilePos = enemyMissile.position;
+    
+    // Ground collision
+    if (missilePos.y < 1) {
+        handleEnemyMissileImpact(enemyMissile, index);
+        return true;
+    }
+    
+    // Building collision with improved detection
+    for (let j = 0; j < buildings.length; j++) {
+        const building = buildings[j];
+        const halfWidth = building.userData.width / 2;
+        const halfHeight = building.userData.height / 2;
+        
+        // More precise collision detection 
+        // Check if missile is inside building box with a small buffer
+        if (Math.abs(missilePos.x - building.position.x) < halfWidth + 1.5 &&
+            Math.abs(missilePos.y - building.position.y) < halfHeight + 1.5 &&
+            Math.abs(missilePos.z - building.position.z) < halfWidth + 1.5) {
+
+         // Handle impact
+         handleEnemyMissileImpact(enemyMissile, index, building);
+            return true;
+        }        
+            
+        const missileVelocity = enemyMissile.userData.direction.clone().multiplyScalar(enemyMissile.userData.speed * 20);
+        const missileEnd = missilePos.clone().add(missileVelocity);
+        
+        // Check if line segment intersects building box
+        if (lineBoxIntersection(missilePos, missileEnd, building)) {
+            handleEnemyMissileImpact(enemyMissile, index, building);
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+// Helper function to detect line-box intersection
+function lineBoxIntersection(lineStart, lineEnd, building) {
+    const bPos = building.position;
+    const halfWidth = building.userData.width / 2;
+    const halfHeight = building.userData.height / 2;
+    
+    // Define box bounds
+    const boxMin = new THREE.Vector3(
+        bPos.x - halfWidth,
+        bPos.y - halfHeight,
+        bPos.z - halfWidth
+    );
+    const boxMax = new THREE.Vector3(
+        bPos.x + halfWidth,
+        bPos.y + halfHeight,
+        bPos.z + halfWidth
+    );
+    
+    // Check if line segment intersects box
+    // Simple method: check if any point along the line is inside the box
+    const segments = 10;
+    for (let i = 0; i <= segments; i++) {
+        const point = new THREE.Vector3().lerpVectors(lineStart, lineEnd, i/segments);
+        if (point.x >= boxMin.x && point.x <= boxMax.x &&
+            point.y >= boxMin.y && point.y <= boxMax.y &&
+            point.z >= boxMin.z && point.z <= boxMax.z) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Handle enemy missile impact
+function handleEnemyMissileImpact(enemyMissile, index, building = null) {
+    // Get impact position
+    const impactPosition = enemyMissile.position.clone();
+    
+    // Building collision
+    if (building) {
+        // Use the same sophisticated explosion system with smaller size (isPlayerEvent = false)
+        createExplosion(impactPosition, false, false);
+        
+        // Add building to damaged buildings so it will emit smoke
+        if (!building.userData.isTarget && !damagedBuildings.includes(building)) {
+            damagedBuildings.push(building);
+            // Create initial smoke burst from damaged building
+            for (let i = 0; i < 3; i++) {
+                createBuildingSmoke(building);
+            }
+        }
+        
+        // Handle target building if applicable
+        if (building.userData.isTarget) {
+            handleEnemyTargetHit(building);
+        }
+    } 
+    // Ground collision - create ground scorch with smoke
+    else {
+        createExplosion(impactPosition, false, true);
+    }
+    
+    // Play explosion sound with pooled audio
+    playEnemyExplosionSound();
+    
+    // Remove missile
+    scene.remove(enemyMissile);
+    enemyMissiles.splice(index, 1);
+}
+
+function initFlightSoundPool() {
+    // Create small pools for each flight sound
+    window.flightSoundPool = {
+        flight1: [sounds.flight1],
+        flight2: [sounds.flight2]
+    };
+    
+    // Add 1 additional sound to each pool
+    for (let i = 0; i < 1; i++) {
+        const normalSound = new Audio('flight1.mp3');
+        normalSound.loop = true;
+        normalSound.volume = 0.4;
+        
+        const accelSound = new Audio('flight2.mp3');
+        accelSound.loop = true;
+        accelSound.volume = 0.5;
+        
+        window.flightSoundPool.flight1.push(normalSound);
+        window.flightSoundPool.flight2.push(accelSound);
+    }
+    
+    // Track which sound is currently playing
+    window.currentFlightIndex = 0;
+}
+
+
+
+function playEnemyExplosionSound() {
+    if (sounds.muted) return;
+    
+    if (!window.explosionSoundPool) {
+        initSoundPool();
+    }
+    
+    // Get next sound in pool
+    const sound = window.explosionSoundPool[window.explosionSoundIndex];
+    window.explosionSoundIndex = (window.explosionSoundIndex + 1) % window.explosionSoundPool.length;
+    
+    // Reset and play
+    sound.pause();
+    sound.currentTime = 0;
+    sound.play().catch(e => {});
+}
+
+// Handle enemy missile hitting a target building
+function handleEnemyTargetHit(target) {
+    // Ensure this is actually a target building
+    if (!target || !target.userData || !target.userData.isTarget) {
+        return; // Do not process non-target buildings
+    }
+    const targetPosition = target.position.clone();
+    const buildingWidth = target.userData.width;  // Get width for scorch size
+    
+   // Use the same explosion function as player missiles
+   createExplosion(targetPosition, false, false);
+    
+    // Screen shake
+    screenShakeTime = 0.6;
+    screenShakeIntensity = 1.2;
+    
+        
+    // Remove target from scene and arrays
+    scene.remove(target);
+    const targetIndex = buildings.indexOf(target);
+    if (targetIndex > -1) {
+        buildings.splice(targetIndex, 1);
+    }
+    
+    const targetBuildingIndex = targetBuildings.indexOf(target);
+    if (targetBuildingIndex > -1) {
+        targetBuildings.splice(targetBuildingIndex, 1);
+
+        // Create a ground scorch mark where the building was
+        const scorchPosition = new THREE.Vector3(targetPosition.x, -0.3, targetPosition.z);
+        createScorchMark(scorchPosition, false);
+
+         // Make it slightly larger than normal - THIS WAS MISSING
+         const lastScorch = scorchMarks[scorchMarks.length - 1];
+        if (lastScorch) {
+            const scorchSize = buildingWidth * 1.2; // Slightly bigger than building base
+            lastScorch.scale.set(scorchSize, scorchSize, 1);
+            
+            if (lastScorch.userData.emberEffect) {
+                lastScorch.userData.emberEffect.scale.set(scorchSize * 0.8, scorchSize * 0.8, 1);
+            }
+            
+            // Make this scorch produce more smoke
+            lastScorch.userData.smokeIntensity = 1.5;
+        }
+        
+        // Create smoke column 
+        createSmokeColumn(scorchPosition, 20);
+        
+        // Update stats
+        stats.targetsRemaining--;
+        document.getElementById('targetsRemaining').textContent = stats.targetsRemaining;
+        
+        // Check if all targets are destroyed
+        if (stats.targetsRemaining <= 0) {
+            setTimeout(() => {
+                showGameOver();
+            }, 3000);
+        }
+    }
+}
+
+// Limit total number of scorch marks
+function limitScorchMarks() {
+    while (scorchMarks.length > 75) {
+        const oldest = scorchMarks.shift();
+        if (oldest.userData.flickerInterval) {
+            clearInterval(oldest.userData.flickerInterval);
+        }
+        disposeObject(oldest);
+    }
+}
+
+function updateDamagedBuildingsSmoke() {
+    // Only proceed if we have damaged buildings
+    if (damagedBuildings.length === 0) return;
+    
+    // Process each damaged building
+    for (let i = damagedBuildings.length - 1; i >= 0; i--) {
+        const building = damagedBuildings[i];
+        
+        // Skip if building no longer exists in main buildings array
+        if (!buildings.includes(building)) {
+            damagedBuildings.splice(i, 1);
+            continue;
+        }
+        
+        // Emit smoke with global timer efficiency
+        if (Math.random() < 0.4) { // 40% chance per building per global interval
+            createBuildingSmoke(building);
+        }
+    }
+}
+
+function createBuildingSmoke(building) {
+    // Skip if we're at particle limit
+    if (smokeParticles.length > MAX_SMOKE_PARTICLES * 0.9) return;
+    
+    // Use our shared smoke texture
+    if (!window.scorchSmokeTexture) {
+        // This will be created in createDramaticScorchSmoke if needed
+        return;
+    }
+    
+    const buildingWidth = building.userData.width;
+    const buildingHeight = building.userData.height;
+    
+    // Enhanced version with billboard smoke
+    const smokeSize = THREE.MathUtils.randFloat(2.0, 3.0);
+    const smokeGeometry = new THREE.PlaneGeometry(1, 1);
+    
+    // More realistic dark smoke color
+    const darkValue = THREE.MathUtils.randFloat(0.1, 0.2);
+    const smokeMaterial = new THREE.MeshBasicMaterial({
+        map: window.scorchSmokeTexture,
+        transparent: true,
+        depthWrite: false,
+        opacity: THREE.MathUtils.randFloat(0.6, 0.8),
+        side: THREE.DoubleSide,
+        color: new THREE.Color(darkValue, darkValue, darkValue)
+    });
+    
+    const smoke = new THREE.Mesh(smokeGeometry, smokeMaterial);
+    smoke.scale.set(smokeSize, smokeSize, 1);
+    
+    // Position at top of building with variation
+    smoke.position.copy(building.position).add(
+        new THREE.Vector3(
+            THREE.MathUtils.randFloatSpread(buildingWidth * 0.6),
+            buildingHeight * 0.5,  // Emit from top of building
+            THREE.MathUtils.randFloatSpread(buildingWidth * 0.6)
+        )
+    );
+    
+    // Billboard to face camera
+    smoke.userData.isBillboard = true;
+    
+    // Smoke behavior
+    const windInfluence = 1.2; // Buildings have more wind influence
+    smoke.userData = {
+        life: THREE.MathUtils.randFloat(4, 8), // Longer life for building smoke
+        maxLife: THREE.MathUtils.randFloat(4, 8),
+        growRate: THREE.MathUtils.randFloat(1.005, 1.01),
+        velocity: new THREE.Vector3(
+            globalWindDirection.x * windInfluence + THREE.MathUtils.randFloatSpread(0.2),
+            THREE.MathUtils.randFloat(0.6, 1.0),  // Upward drift
+            globalWindDirection.z * windInfluence + THREE.MathUtils.randFloatSpread(0.2)
+        ),
+        rotationSpeed: new THREE.Vector3(0, 0, THREE.MathUtils.randFloatSpread(0.1)),
+        isBillboard: true,
+        source: building,
+        sourceType: 'building'
+    };
+    
+    scene.add(smoke);
+    smokeParticles.push(smoke);
+}
+
+// Create smoke for enemy missiles
+function createEnemyMissileSmoke(enemyMissile) {
+    const smokeGeometry = new THREE.SphereGeometry(0.4, 8, 8);
+    const smokeMaterial = new THREE.MeshBasicMaterial({ 
+        color: 0x555555,
+        transparent: true,
+        opacity: 0.5,
+        depthWrite: false
+    });
+    
+    const smoke = new THREE.Mesh(smokeGeometry, smokeMaterial);
+    
+    // Position behind missile
+    const missileBackVector = enemyMissile.userData.direction.clone().negate();
+    smoke.position.copy(enemyMissile.position)
+        .add(missileBackVector.multiplyScalar(4))
+        .add(new THREE.Vector3(
+            THREE.MathUtils.randFloatSpread(0.5),
+            THREE.MathUtils.randFloatSpread(0.5),
+            THREE.MathUtils.randFloatSpread(0.5)
+        ));
+    
+    smoke.userData = {
+        life: 0.8,
+        maxLife: 0.8,
+        growRate: 1.03,
+        velocity: new THREE.Vector3(
+            THREE.MathUtils.randFloatSpread(0.05),
+            THREE.MathUtils.randFloat(0.02, 0.1),
+            THREE.MathUtils.randFloatSpread(0.05)
+        )
+    };
+    
+    scene.add(smoke);
+    smokeParticles.push(smoke);
+}
+
+function updateScore() {
+    // Base formula: 
+    // - Each target destroyed: +1000 points
+    // - Time efficiency bonus: faster than avg gets bonus
+    // - Crash penalty: -200 points per crash
+    
+    // Base score from targets
+    const baseScore = stats.targetsDestroyed * 1000;
+    
+    // Time efficiency bonus
+    let timeBonus = 0;
+    if (stats.targetsDestroyed > 0 && avgFlightTime > 0) {
+        // If current flight time is better than average, give bonus
+        if (elapsedTime < avgFlightTime) {
+            timeBonus = (avgFlightTime - elapsedTime) * 100;
+        }
+    }
+    
+    // Crash penalty
+    const crashPenalty = stats.crashes * 200;
+    
+    // Calculate final score
+    score = baseScore + timeBonus - crashPenalty;
+    
+    // Ensure score doesn't go negative
+    score = Math.max(0, score);
+}
+
+function optimizeBuildingMaterials() {
+    buildings.forEach(building => {
+        // Distance to camera
+        const distance = camera.position.distanceTo(building.position);
+        
+        if (distance > 200) {
+            // Use simple material for distant buildings
+            if (building.material.type !== 'MeshLambertMaterial') {
+                const color = building.material.color;
+                disposeObject(building.material);
+                building.material = new THREE.MeshLambertMaterial({
+                    color: color
+                });
+            }
+        }
+    });
+}
+
+function updatePhysics(timeStep) {
+    // Update missile physics at fixed intervals
+    if (gameActive && !launchAnimation && resetDelay <= 0 && missile.visible) {
+
+         // Update player missile position
+        tempVec3.copy(missileDirection).multiplyScalar(velocity * timeStep * 60);
+        missile.position.add(tempVec3);
+                
+        // Update enemy missiles physics
+        enemyMissiles.forEach(enemyMissile => {
+            tempVec4.copy(enemyMissile.userData.direction).multiplyScalar(
+            enemyMissile.userData.speed * timeStep * 60
+        );
+        enemyMissile.position.add(tempVec4);
+        });
+        
+        // Update explosion particles with physics
+        for (let i = explosionParticles.length - 1; i >= 0; i--) {
+            const particle = explosionParticles[i];
+            tempVec4.copy(particle.userData.velocity).multiplyScalar(timeStep * 10);
+            particle.position.add(tempVec4);
+            
+            // Apply simple gravity to debris
+            if (particle.userData.rotationSpeed) {
+                particle.rotation.x += particle.userData.rotationSpeed.x * timeStep * 60;
+                particle.rotation.y += particle.userData.rotationSpeed.y * timeStep * 60;
+                particle.rotation.z += particle.userData.rotationSpeed.z * timeStep * 60;
+                
+                // Add gravity
+                particle.userData.velocity.y -= 9.8 * timeStep;
+            }
+        }
+    }
+}
+
+
+
+    function animate(currentTime) {
+    animationFrameId = requestAnimationFrame(animate);
+        
+    // First frame initialization
+    if (!lastTime) {
+        lastTime = currentTime;
+        return; // Skip first frame to avoid huge delta
+    }
+    
+    // Calculate delta time in seconds with upper limit to avoid large jumps
+    const rawDelta = (currentTime - lastTime) / 1000;
+    const delta = Math.min(rawDelta, 0.05); // Cap at 50ms to prevent extreme jumps
+    lastTime = currentTime;
+
+    // If game is active, update game elements
+    if (gameActive) {
+        // Handle launch animation
+        if (launchAnimation) {
+            handleLaunchAnimation(delta);
+        } 
+        // Handle reset delay (after crash or target hit)
+        else if (resetDelay > 0) {
+            handleResetDelay(delta);
+        } 
+        // Normal gameplay
+        else {
+            updateMissile(delta);
+            updateCamera(delta);
+            checkCollisions();
+        }
+        
+        // Update time value for explosion shader animation
+        const shaderTime = performance.now() * 0.001;
+        for (let i = 0; i < explosionParticles.length; i++) {
+       const particle = explosionParticles[i];
+       if (particle.material && particle.material.uniforms && particle.material.uniforms.time) {
+        particle.material.uniforms.time.value = shaderTime;
+    }
+}
+
+        // Always update particles and HUD
+        updateParticles(delta);
+        updateHUD();
+
+        // Clean up scorch marks less frequently (every 30 frames)
+        scorchCleanupCounter++;
+        if (scorchCleanupCounter >= 30) {
+            cleanupScorchMarks();
+            scorchCleanupCounter = 0;
+        }
+    }
+    
+    // Update things
+    updateEnemyMissiles(delta);
+    updateMinimap();
+    updateScorchMarks(delta);
+    updatePhysics(delta);
+    
+    // Apply screen shake directly rather than in separate function
+    if (screenShakeTime > 0) {
+    const intensity = screenShakeIntensity * screenShakeTime;
+    cameraShakeOffset.set(
+        (Math.random() - 0.5) * intensity,
+        (Math.random() - 0.5) * intensity,
+        (Math.random() - 0.5) * intensity
+    );
+    camera.position.add(cameraShakeOffset);
+    // Then subtract to restore position
+    camera.position.sub(cameraShakeOffset);
+    
+    screenShakeTime -= delta;
+}
+    
+    // Render the scene
+    renderer.render(scene, camera);
+}
+
+
+
+function handleLaunchAnimation(delta) {
+    launchAnimationTime += delta;
+    // Play sound once at beginning of launch
+    if (launchAnimationTime <= delta) { // Will trigger on first frame only
+        playSound('missile');
+        // Ensure camera up vector is reset at the very start of launch
+        camera.up.set(0, 1, 0);
+    }
+
+    if (launchAnimationTime >= launchAnimationDuration) {
+        // Animation complete
+        launchAnimation = false;
+        startFlightSound();
+        hideControlsOverlay(); // Hide controls when player takes control
+        velocity = baseVelocity;
+
+        smoothedCameraPosition.copy(camera.position);
+        
+        // Calculate what the camera is currently looking at
+        const tempLookDir = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+        smoothedCameraLookAt.copy(missile.position);
+    } else {
+        // Calculate animation progress (0 to 1)
+        const progress = launchAnimationTime / launchAnimationDuration;
+        
+        // Starting position (far behind missile)
+        const startPosition = missile.position.clone().sub(
+            missileDirection.clone().multiplyScalar(50)
+        );
+        startPosition.y += 20; // Higher up
+        
+        // End position (normal camera offset)
+        const endPosition = missile.position.clone().sub(
+            missileDirection.clone().multiplyScalar(cameraOffset.z)
+        );
+        endPosition.y += cameraOffset.y;
+        
+        // Interpolate between start and end positions
+        camera.position.lerpVectors(startPosition, endPosition, progress);
+        
+        // Always look at missile during animation with a level up vector
+        camera.lookAt(missile.position);
+        camera.up.set(0, 1, 0); // Keep camera level during animation
+        
+        // Update missile position/direction but don't update camera in updateMissile
+        const originalCameraPos = camera.position.clone();
+        updateMissile(delta);
+        camera.position.copy(originalCameraPos);
+    }
+}
+    
+function handleResetDelay(delta) {
+    // While waiting to reset, keep camera focused on explosion
+    resetDelay -= delta;
+    
+    if (cameraTarget) {
+        // Keep camera focused on explosion point without moving
+        camera.position.lerp(new THREE.Vector3(
+            cameraTarget.x + 10,
+            cameraTarget.y + 15,
+            cameraTarget.z + 10
+        ), delta * 2);
+        camera.lookAt(cameraTarget);
+    }
+    
+    // Reset missile when delay is over
+    if (resetDelay <= 0) {
+        // Reset camera's up vector to ensure a level view
+        camera.up.set(0, 1, 0);
+        
+        // Also reset the vertical reference frame to prevent odd angles
+        camera.userData.verticalReferenceFrame = {
+            forward: new THREE.Vector3(0, 0, 1),
+            right: new THREE.Vector3(1, 0, 0),
+            up: new THREE.Vector3(0, 1, 0)
+        };
+        
+        resetMissile();
+        cameraTarget = null;
+        
+        // SKIP the launch animation - go directly to normal flight
+        launchAnimation = false;
+        
+        // Position camera directly behind missile with proper offset
+        const targetCameraPos = missile.position.clone().sub(
+            missileDirection.clone().multiplyScalar(cameraOffset.z)
+        );
+        targetCameraPos.y += cameraOffset.y;
+        
+        // Set camera position and look target immediately
+        camera.position.copy(targetCameraPos);
+        camera.lookAt(missile.position);
+        
+        // Update smoothed positions to prevent any lingering interpolation
+        smoothedCameraPosition.copy(camera.position);
+        smoothedCameraLookAt.copy(missile.position);
+        
+        // Set velocity to base value
+        velocity = baseVelocity;
+
+        playSound('missile2');
+    }
+}
+    
+    </script>
+</body>
+</html>
