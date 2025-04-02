@@ -517,7 +517,7 @@ const portalConfig = {
     // Player tracking for multiplayer
 let playerStats = {
     id: generatePlayerId(), // We'll create this function
-    name: "Player " + Math.floor(Math.random() * 1000), // Random player name for now
+    name: "You ", // Random player name for now
     targetsDestroyed: 0,
     totalPlayTimeSeconds: 0,
     activePlayTimeSeconds: 0,
@@ -983,64 +983,7 @@ function initPortals() {
 function optimizeForMobile() {
     if (!isMobile) return;
     
-    // Simplify renderer settings for performance
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1));
-    renderer.shadowMap.enabled = false;
-    
-    // Create clean, simple mobile styles
-    const mobileStyle = document.createElement('style');
-    mobileStyle.textContent = `
-        /* Mobile-specific styles that preserve desktop appearance */
-        #hud {
-            font-size: 14px;
-            padding: 10px;
-            top: 10px;
-            left: 10px;
-            min-width: 120px;
-        }
-        
-        #minimap {
-            width: 150px;
-            height: 150px;
-            bottom: 10px;
-            left: 10px;
-        }
-        
-        #leaderboard {
-            font-size: 12px;
-            padding: 10px;
-            right: 10px;
-            top: 10px;
-            width: 160px;
-            min-width: auto;
-        }
-        
-        .leaderboard-title {
-            font-size: 14px;
-            margin-bottom: 8px;
-        }
-        
-        .leaderboard-table th, .leaderboard-table td {
-            padding: 4px;
-        }
-        
-        /* Hide label text on small screens */
-        .hud-row span:first-child {
-            font-size: 12px;
-        }
-        
-        #direction, #speed, #altitude {
-            font-size: 16px;
-        }
-    `;
-    document.head.appendChild(mobileStyle);
-    
-    // Update minimap renderer size to match container
-    if (minimapRenderer) {
-        minimapRenderer.setSize(150, 150);
-    }
-    
-    // Add simple touch controls
+    // Set up simple touch controls
     renderer.domElement.addEventListener('touchstart', function(e) {
         e.preventDefault();
         isAccelerating = true;
@@ -1053,42 +996,12 @@ function optimizeForMobile() {
         updateFlightSound(false);
     }, { passive: false });
     
-    // Add simple auto-orientation request
-    if (typeof DeviceOrientationEvent !== 'undefined' && 
-        typeof DeviceOrientationEvent.requestPermission === 'function') {
-        
-        const orientationBtn = document.createElement('button');
-        orientationBtn.innerHTML = '📱 Enable Controls';
-        orientationBtn.style.position = 'absolute';
-        orientationBtn.style.top = '50%';
-        orientationBtn.style.left = '50%';
-        orientationBtn.style.transform = 'translate(-50%, -50%)';
-        orientationBtn.style.padding = '15px 25px';
-        orientationBtn.style.background = '#ff3333';
-        orientationBtn.style.color = 'white';
-        orientationBtn.style.border = 'none';
-        orientationBtn.style.borderRadius = '5px';
-        orientationBtn.style.zIndex = '2000';
-        orientationBtn.style.fontFamily = "'Quantico', sans-serif";
-        
-        orientationBtn.addEventListener('click', function() {
-            DeviceOrientationEvent.requestPermission()
-                .then(response => {
-                    if (response === 'granted') {
-                        window.addEventListener('deviceorientation', handleDeviceOrientation);
-                    }
-                    this.style.display = 'none';
-                })
-                .catch(console.error);
-        });
-        
-        document.body.appendChild(orientationBtn);
-    } else {
-        // For devices that don't require permission
+    // Simple device orientation setup - no permission buttons
+    if (window.DeviceOrientationEvent) {
         window.addEventListener('deviceorientation', handleDeviceOrientation);
     }
     
-    // Show mobile instructions after a short delay
+    // Simple controls overlay
     setTimeout(() => {
         document.getElementById('controlsOverlay').innerHTML = 
             'TILT TO STEER • TAP TO ACCELERATE';
@@ -1682,7 +1595,7 @@ function createMissile() {
     // Create the main body (cylinder)
     const bodyGeometry = new THREE.CylinderGeometry(1, 1, 8, 16);
     const bodyMaterial = new THREE.MeshStandardMaterial({ 
-        color: 0xff3333,  // Use direct color instead of selectedMissileColor
+        color: 0x5c5c5c,  // Use direct color instead of selectedMissileColor
         metalness: 0.3,
         roughness: 0.6
     });
@@ -1774,8 +1687,8 @@ function createMissile() {
 function setupMinimap() {
     // Create container to allow rotation
     minimapContainer = document.createElement('div');
-    minimapContainer.style.width = '100%';
-    minimapContainer.style.height = '100%';
+    minimapContainer.style.width = '70%';
+    minimapContainer.style.height = '70%';
     minimapContainer.style.position = 'relative';
     document.getElementById('minimap').appendChild(minimapContainer);
     
@@ -2138,7 +2051,7 @@ function navigateToPortalDestination(portal) {
     const params = new URLSearchParams();
     params.append('portal', 'true');
     params.append('username', playerStats.name);
-    params.append('color', playerStats.color || '#ff3333');
+    params.append('color', playerStats.color || '0x5C5C5C');  // Default to grey
     params.append('speed', Math.round(velocity * 20)); // Convert to compatible speed units
     
     // Add ref parameter (where player is coming from)
