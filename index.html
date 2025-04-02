@@ -51,47 +51,7 @@
         color: #ff3333;
     }
     
-    #startMenu p {
-        font-size: 18px;
-        margin-bottom: 30px;
-        line-height: 1.6;
-    }
-
-    #gameOverStats {
-        font-size: 20px;
-        margin: 30px 0;
-        text-align: left;
-        padding: 15px;
-        background-color: rgba(0, 0, 0, 0.4);
-        border-left: 4px solid #ff3333;
-    }
-
-    #launchButton, #restartButton {
-        background-color: #ff1a1a;
-        color: white;
-        border: none;
-        padding: 15px 40px;
-        font-size: 24px;
-        cursor: pointer;
-        border-radius: 5px;
-        margin-top: 10px;
-        transition: all 0.3s;
-        font-family: 'Black Ops One', cursive;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-        position: relative;
-        box-shadow: 0 5px 15px rgba(255, 0, 0, 0.4);
-    }
     
-    #launchButton:hover, #restartButton:hover {
-        background-color: #ff0000;
-        transform: translateY(-3px) scale(1.05);
-        box-shadow: 0 8px 20px rgba(255, 0, 0, 0.6);
-    }
-    
-    #launchButton:active, #restartButton:active {
-        transform: translateY(2px);
-    }
     
     /* Add decorative elements to the UI */
     #startMenu:before, #gameOverScreen:before {
@@ -142,30 +102,111 @@
         border-top: none;
     }
         
-        #hud {
+    #hud {
+            font-family: 'Quantico', sans-serif;
+            padding: 20px;
+            background-color: rgba(0, 0, 0, 0.7);
+            border: 1px solid #ff3333;
+            border-radius: 5px;
+            color: white;
+            min-width: 250px;
             position: absolute;
             top: 20px;
             left: 20px;
-            color: white;
-            font-family: monospace;
-            font-size: 16px;
-            background-color: rgba(0, 0, 0, 0.5);
-            padding: 10px;
-            border-radius: 5px;
-            display: none;
-            text-shadow: 1px 1px 2px black;
+            font-size: 18px; /* Increased font size */
+        }
+        .hud-row span:first-child {
+            margin-right: 20px;
+            color: #aaaaaa;
+            font-weight: bold;
+        }
+        
+        #direction, #speed, #altitude {
+            color: #66ccff;
+            font-size: 22px; /* Even bigger for values */
+            font-weight: bold;
+        }
+
+        .hud-row {
+            margin: 10px 0;
+            display: flex;
+            justify-content: space-between;
         }
         #minimap {
             position: absolute;
-            bottom: 50px;
-            right: 20px;
+            bottom: 20px;
+            left: 20px;
             width: 450px;
             height: 450px;
             background-color: rgba(0, 0, 0, 0.5);
             border-radius: 5px;
-            border: 2px solid #000; /* Add a thin black border */
-            display: none;
+            border: 2px solid #000;
             overflow: hidden;
+        }
+        #leaderboard {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            font-family: 'Quantico', sans-serif;
+            padding: 15px;
+            border-radius: 5px;
+            border: 1px solid #ff3333;
+            min-width: 400px;
+            z-index: 1000;
+        }
+        
+        .leaderboard-title {
+            text-align: center;
+            margin-bottom: 12px;
+            font-size: 20px;
+            color: #ffffff;
+            border-bottom: 1px solid #555;
+            padding-bottom: 8px;
+            font-weight: bold;
+        }
+        
+        .leaderboard-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        .leaderboard-table th {
+            text-align: left;
+            padding: 8px;
+            color: #aaaaaa;
+            border-bottom: 1px solid #444;
+        }
+        
+        .leaderboard-table td {
+            padding: 8px;
+            border-bottom: 1px solid #333;
+        }
+        
+        .leaderboard-table tr.you {
+            background-color: rgba(255, 51, 51, 0.3);
+        }
+        
+        .leaderboard-table .tpm {
+            font-weight: bold;
+            color: #ffcc00;
+        }
+        
+        .leaderboard-table .name {
+            max-width: 150px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        @keyframes highlight {
+            0% { background-color: rgba(255, 204, 0, 0.4); }
+            100% { background-color: transparent; }
+        }
+        
+        .highlight {
+            animation: highlight 1.5s;
         }
 
         
@@ -322,6 +363,9 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://unpkg.com/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
 
     <script>
         // Game variables
@@ -370,7 +414,6 @@
         const enemyMissileSpawnRate = 3; // New enemy missile every 3 seconds
         let enemyMissileTimer = 0;
         let scorchMarks = [];
-        let score = 0;
         let playerMarker; // For minimap visibility
         let animationFrameId; // For smoother animation
         let lastTime = 0; // For frame timing
@@ -385,6 +428,13 @@
         let globalScorchInterval = 100; // milliseconds
         let scorchCleanupCounter = 0;
         let damagedBuildings = [];
+        let entryPortal = null;
+        let entryPortalRef = null;
+        let db;
+        let leaderboardListener = null;
+        let lastFirebaseSync = 0;
+        const FIREBASE_SYNC_INTERVAL = 10; // Sync every 10 seconds
+        
 
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
         
@@ -439,6 +489,11 @@
     red: null
 };
         
+const portalConfig = {
+    next: "https://portal.pieter.com",  // Where "Next" portals go
+    self: "https://vibe-missile.vercel.app",// "Back" portals go to ref parameter
+    transitionDuration: 1000           // Transition animation time in ms
+};
 
         // Input state
         const keys = {
@@ -458,6 +513,37 @@
             crashes: 0,
             flightTime: 0
         };
+
+    // Player tracking for multiplayer
+let playerStats = {
+    id: generatePlayerId(), // We'll create this function
+    name: "Player " + Math.floor(Math.random() * 1000), // Random player name for now
+    targetsDestroyed: 0,
+    totalPlayTimeSeconds: 0,
+    activePlayTimeSeconds: 0,
+    tpm: 0,
+    color: "#ff3333" // Default missile color
+};
+
+// Leaderboard tracking
+let leaderboard = [
+    // Will be populated with player data
+];    
+
+const firebaseConfig = {
+    apiKey: "AIzaSyAKNrmt5HLrxYjEukNH85e01-eyAsUGvf4",
+    authDomain: "vibe-missile.firebaseapp.com",
+    projectId: "vibe-missile",
+    storageBucket: "vibe-missile.appspot.com",
+    messagingSenderId: "1048243867578",
+    appId: "1:1048243867578:web:9c502d5275fcb8a43b5783"
+};
+
+
+// Generate a unique player ID
+function generatePlayerId() {
+    return 'player_' + Math.random().toString(36).substr(2, 9);
+}
 
     // Preload sound effects
     function initSounds() {
@@ -728,6 +814,12 @@ function init() {
     initSounds();
     initSoundPool();
 
+    // optimize for mobile
+    if (isMobile) {
+        optimizeForMobile();
+        console.log("Mobile optimizations applied");
+    }
+
     // Set up the scene
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x87CEEB);  // Sky blue
@@ -769,9 +861,13 @@ function init() {
        
     // Create the city
     createCity();
+
+    createPortalRings(); // Create portal rings
     
     // Set up the minimap
     setupMinimap();
+
+    createLeaderboard(); // Create leaderboard
  
     // Create the missile
     createMissile();
@@ -809,7 +905,7 @@ function init() {
     }
     
     // Create camera with proper perspective
-    camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
     
     // Initialize game directly - no start menu
     document.getElementById('hud').style.display = 'block';
@@ -865,10 +961,24 @@ function init() {
         requestAnimationFrame(animate);
     }, false);
 
+    initPortals(); // Initialize portals
+
+    initFirebase(); // Initialize Firebase
+
+    addDummyPlayers(); // Add dummy players for testing
+
     // Start animation loop
     lastTime = 0; // Reset lastTime
     requestAnimationFrame(animate);
 }    
+
+function initPortals() {
+    // Handle incoming portal parameters
+    handleIncomingPortal();
+    
+    // Update materials for portal animation
+    updatePortalMaterials();
+}
 
 function optimizeForMobile() {
     if (!isMobile) return;
@@ -929,25 +1039,145 @@ function optimizeForMobile() {
     // Scale down HUD and minimap
     const hud = document.getElementById('hud');
     const minimap = document.getElementById('minimap');
+    const leaderboard = document.getElementById('leaderboard');
     
     if (hud) {
         hud.style.fontSize = '12px';
         hud.style.padding = '8px';
-        hud.style.maxWidth = '30%';
+        hud.style.top = '10px';
+        hud.style.left = '10px';
     }
     
     if (minimap) {
-        minimap.style.width = '120px';
-        minimap.style.height = '120px';
-        minimap.style.bottom = '60px';
-        minimap.style.right = '10px';
+        minimap.style.width = '200px';  // Increased from 120px
+        minimap.style.height = '200px'; // Increased from 120px
+        minimap.style.bottom = '10px';
+        minimap.style.left = '10px';
         
         // Update minimap renderer size
         if (minimapRenderer) {
-            minimapRenderer.setSize(120, 120);
+            minimapRenderer.setSize(200, 200); // Match the container size
         }
     }
+
+    if (leaderboard) {
+        leaderboard.style.fontSize = '12px';
+        leaderboard.style.padding = '8px';
+        leaderboard.style.minWidth = '200px';
+        leaderboard.style.right = '10px';
+        leaderboard.style.top = '10px';
+    }
 }
+
+function initFirebase() {
+    // Initialize Firebase
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.firestore();
+    
+    // Initialize anonymous authentication
+    firebase.auth().signInAnonymously().catch(error => {
+        console.error("Authentication error:", error);
+    });
+    
+    // Set up auth state change listener
+    firebase.auth().onAuthStateChanged(user => {
+        if (user) {
+            // User is signed in, set up their player ID
+            playerStats.firebaseId = user.uid;
+            
+            // Fetch existing player data if returning user
+            fetchPlayerData(user.uid);
+            
+            // Start listening to leaderboard updates
+            subscribeToLeaderboard();
+        }
+    });
+}
+
+// Fetch existing player data if they've played before
+function fetchPlayerData(userId) {
+    db.collection("players").doc(userId).get().then(doc => {
+        if (doc.exists) {
+            const data = doc.data();
+            
+            // Only update name if we don't have a specified one (from portal)
+            if (!playerStats.name.startsWith("Player from portal")) {
+                playerStats.name = data.name;
+            }
+            
+            // Copy over persistent stats
+            playerStats.allTimeTargetsDestroyed = data.allTimeTargetsDestroyed || 0;
+            playerStats.totalPlayTimeSeconds = data.totalPlayTimeSeconds || 0;
+            
+            // If they have a color, use it
+            if (data.color) {
+                playerStats.color = data.color;
+                
+                // Apply color to missile
+                if (missile && missile.children && missile.children[0]) {
+                    missile.children[0].material.color.set(data.color);
+                }
+            }
+        } else {
+            // First time player, create their record
+            updatePlayerInFirebase();
+        }
+    }).catch(error => {
+        console.error("Error fetching player data:", error);
+    });
+}
+
+// Update player stats in Firebase
+function updatePlayerInFirebase() {
+    if (!playerStats.firebaseId) return;
+    
+    db.collection("players").doc(playerStats.firebaseId).set({
+        name: playerStats.name,
+        tpm: playerStats.tpm,
+        targetsDestroyed: playerStats.targetsDestroyed,
+        allTimeTargetsDestroyed: playerStats.allTimeTargetsDestroyed || playerStats.targetsDestroyed,
+        totalPlayTimeSeconds: playerStats.totalPlayTimeSeconds,
+        lastActive: firebase.firestore.FieldValue.serverTimestamp(),
+        color: playerStats.color
+    }, { merge: true }).catch(error => {
+        console.error("Error updating player data:", error);
+    });
+}
+
+// Subscribe to leaderboard updates
+function subscribeToLeaderboard() {
+    // Unsubscribe from any existing listener
+    if (leaderboardListener) leaderboardListener();
+    
+    // Subscribe to top 20 players by TPM
+    leaderboardListener = db.collection("players")
+        .orderBy("tpm", "desc")
+        .limit(20)
+        .onSnapshot(snapshot => {
+            // Process the leaderboard data
+            const leaderboardData = [];
+            snapshot.forEach(doc => {
+                const data = doc.data();
+                leaderboardData.push({
+                    id: doc.id,
+                    name: data.name || "Anonymous",
+                    tpm: data.tpm || 0,
+                    targetsDestroyed: data.targetsDestroyed || 0,
+                    color: data.color || "#ff3333"
+                });
+            });
+            
+            // Update global leaderboard array
+            leaderboard = leaderboardData;
+            
+            // Update the leaderboard UI
+            updateLeaderboard();
+        }, error => {
+            console.error("Leaderboard subscription error:", error);
+        });
+}
+
+
 
 
         function initSoundPool() {
@@ -1019,29 +1249,26 @@ function createExplosionShaderMaterial(texture, color) {
     
     // Clear any existing content
     hud.innerHTML = `
-        
-        <div class="hud-row"><span>Targets Remaining:</span> <span id="targetsRemaining">0</span></div>
-        <div class="hud-row"><span>Targets Destroyed:</span> <span id="targetsDestroyed">0</span></div>
-        <div class="hud-row"><span>Crashes:</span> <span id="crashes">0</span></div>
-        <div class="hud-row"><span>Flight Time:</span> <span id="flightTime">0.0</span>s</div>
-        <div class="hud-row"><span>Avg Flight Time:</span> <span id="avgFlightTime">0.0</span>s</div>
-        <div class="hud-row"><span>Direction:</span> <span id="direction">N/A</span></div>
-        <div class="hud-row"><span>Altitude:</span> <span id="altitude">0</span>m</div>
-        <div class="hud-row"><span>Speed:</span> <span id="speed">0</span> km/h</div>
-        <div class="hud-row score"><span>Score:</span> <span id="score">0</span></div>
+        <div class="hud-row"><span>DIRECTION:</span> <span id="direction">N/A</span></div>
+        <div class="hud-row"><span>ALTITUDE:</span> <span id="altitude">0</span>m</div>
+        <div class="hud-row"><span>SPEED:</span> <span id="speed">0</span> km/h</div>
     `;
 
     // Add some CSS for the HUD
     const style = document.createElement('style');
     style.textContent = `
-        #hud {
+       #hud {
             font-family: 'Quantico', sans-serif;
-            padding: 15px;
+            padding: 20px;
             background-color: rgba(0, 0, 0, 0.7);
             border: 1px solid #ff3333;
             border-radius: 5px;
             color: white;
-            min-width: 200px;
+            min-width: 250px;
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            font-size: 18px; /* Increased font size */
         }
         .hud-row {
             margin: 5px 0;
@@ -1052,12 +1279,14 @@ function createExplosionShaderMaterial(texture, color) {
             margin-right: 15px;
             color: #aaaaaa;
         }
-        .score {
-            margin-top: 15px;
-            padding-top: 10px;
-            border-top: 1px solid #444;
+         #direction, #speed, #altitude {
+            color: #66ccff;
+            font-size: 22px; /* Even bigger for values */
             font-weight: bold;
-            font-size: 1.2em;
+        }    
+        #tpmValue {
+            color: #ff3333;
+            font-weight: bold;
         }
         #score {
             color: #ff3333;
@@ -1511,51 +1740,47 @@ function createMissile() {
     exhaustGlow.scale.y += pulseAmount;
 }
 
-        function setupMinimap() {
-           // Create container div for rotating the minimap
+function setupMinimap() {
+    // Create container to allow rotation
     minimapContainer = document.createElement('div');
     minimapContainer.style.width = '100%';
     minimapContainer.style.height = '100%';
-    minimapContainer.style.transformOrigin = 'center center';
+    minimapContainer.style.position = 'relative';
     document.getElementById('minimap').appendChild(minimapContainer);
     
-    // Create minimap renderer
+    // Create minimap renderer inside the container
     minimapRenderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
     minimapRenderer.setSize(450, 450);
     minimapRenderer.setClearColor(0x000000, 0.5);
     minimapContainer.appendChild(minimapRenderer.domElement);
-            
-            // Create a separate scene for minimap
-            minimapScene = new THREE.Scene();
-
-            // Create minimap camera
-            minimapCamera = new THREE.OrthographicCamera(
-                -citySize/2 - 100, citySize/2 + 100, 
-                citySize/2 + 100, -citySize/2 - 100, 
-                1, 1000
-            );
-            minimapCamera.position.set(0, 400, 0);
-            minimapCamera.lookAt(new THREE.Vector3(0, 0, 0));
-            minimapCamera.up.set(0, 0, -1);
-
-           // Create a simple CIRCLE shape for player marker instead of triangle
-    const circleGeometry = new THREE.CircleGeometry(6, 16); // 6 radius, 8 segments
     
+    // Create a separate scene for minimap
+    minimapScene = new THREE.Scene();
+
+    // Create minimap camera with increased view area
+    // Increase the visible area by 20% by changing these values
+    const viewExtent = citySize * 0.6; // Increased from 0.5 to show more area
+    minimapCamera = new THREE.OrthographicCamera(
+        -viewExtent, viewExtent,  // left, right
+        viewExtent, -viewExtent,  // top, bottom
+        1, 1000                   // near, far
+    );
+    minimapCamera.position.set(0, 400, 0);
+    minimapCamera.lookAt(new THREE.Vector3(0, 0, 0));
+    minimapCamera.up.set(0, 0, -1); // North is up in world space
+
+    // Create player marker (circle for directionality)
+    const markerGeometry = new THREE.CircleGeometry(6, 16);
     const markerMaterial = new THREE.MeshBasicMaterial({
         color: 0xff0000,
         side: THREE.DoubleSide
     });
-    
-    playerMarker = new THREE.Mesh(circleGeometry, markerMaterial);
-    
-    // Rotate to point forward and lay flat
-    playerMarker.rotation.x = Math.PI / 2;
-    playerMarker.rotation.z = Math.PI;
+    playerMarker = new THREE.Mesh(markerGeometry, markerMaterial);
+    playerMarker.rotation.x = Math.PI / 2; // Make it face upward
     playerMarker.position.y = 1.0;
     minimapScene.add(playerMarker);
     
-
-    // Create a grid representation of the city for the minimap
+    // Create city representation for minimap
     const cityPlaneGeometry = new THREE.PlaneGeometry(citySize, citySize);
     const cityPlaneMaterial = new THREE.MeshBasicMaterial({ 
         color: 0x444444, 
@@ -1565,8 +1790,24 @@ function createMissile() {
     const cityPlane = new THREE.Mesh(cityPlaneGeometry, cityPlaneMaterial);
     cityPlane.rotation.x = -Math.PI / 2;
     minimapScene.add(cityPlane);
+}
 
-    }
+// Update the updateMinimap function to rotate the container
+function updateMinimap() {
+    if (!gameActive) return;
+    
+    // Update player marker position
+    playerMarker.position.x = missile.position.x;
+    playerMarker.position.z = missile.position.z;
+    
+    // Calculate angle for minimap rotation (based on missile direction)
+    let angle = Math.atan2(missileDirection.x, missileDirection.z);
+    minimapContainer.style.transform = `rotate(${angle}rad)`;
+    
+    // Update and render
+    updateMinimapBuildings();
+    minimapRenderer.render(minimapScene, minimapCamera);
+}
 
     // Convert missile direction to cardinal direction (N, NE, E, etc.)
 function getCardinalDirection(direction) {
@@ -1587,54 +1828,404 @@ function getCardinalDirection(direction) {
     return "N/A"; // Fallback
 }
 
+function createPortalRings() {
+    // Portal ring properties
+    const portalRadius = 30; // Large enough to fly through
+    const tubeRadius = 2.5;  // Thickness of the ring
+    const tubularSegments = 48; // Smoothness around the circumference
+    const radialSegments = 16;  // Smoothness along the tube
+    const portalDistance = citySize * 2.5; // Distance from center - increased
+    const portalHeight = 70; // Higher off the ground
+    
+    // Create geometry for all portals (torus shape)
+    const portalGeometry = new THREE.TorusGeometry(
+        portalRadius, tubeRadius, radialSegments, tubularSegments
+    );
+    
+    // Material with glow effect
+    const portalMaterial = new THREE.ShaderMaterial({
+        uniforms: {
+            time: { value: 0 }
+        },
+        vertexShader: `
+            varying vec2 vUv;
+            void main() {
+                vUv = uv;
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+        `,
+        fragmentShader: `
+            uniform float time;
+            varying vec2 vUv;
+            void main() {
+                float pulse = 0.5 + 0.5 * sin(time * 2.0);
+                vec3 color = vec3(0.0, 0.8 + 0.2 * pulse, 0.3 + 0.3 * pulse);
+                float edge = 0.05;
+                float edgeGlow = smoothstep(0.5 - edge, 0.5, vUv.x) * 
+                                 smoothstep(0.5 - edge, 0.5, 1.0 - vUv.x);
+                gl_FragColor = vec4(color * (0.7 + 0.3 * pulse), 0.9);
+            }
+        `,
+        transparent: true,
+        side: THREE.DoubleSide
+    });
+    
+    // Define the cardinal directions for portal placement
+    const cardinalDirections = [
+        { name: "North", position: new THREE.Vector3(0, 0, portalDistance), facing: new THREE.Vector3(0, 0, -1) },
+        { name: "South", position: new THREE.Vector3(0, 0, -portalDistance), facing: new THREE.Vector3(0, 0, 1) },
+        { name: "East", position: new THREE.Vector3(portalDistance, 0, 0), facing: new THREE.Vector3(-1, 0, 0) },
+        { name: "West", position: new THREE.Vector3(-portalDistance, 0, 0), facing: new THREE.Vector3(1, 0, 0) }
+    ];
+    
+    // Array to store all portal references
+    window.portalRings = [];
+    
+    // Create portal pairs in each cardinal direction
+    cardinalDirections.forEach(dir => {
+        // "Back" portal - slightly offset to the left
+        const backPortal = new THREE.Mesh(portalGeometry, portalMaterial.clone());
+        backPortal.position.copy(dir.position);
+        backPortal.position.y = portalHeight; // Raised higher
+        
+        // Apply offset based on direction (left side of the pair)
+        if (dir.name === "North" || dir.name === "South") {
+            backPortal.position.x -= portalRadius * 2.5;
+            backPortal.rotation.x = 0;
+                
+            // For South portal, also rotate 180 around Y to face North
+            if (dir.name === "South") {
+                backPortal.rotation.y = Math.PI;
+            }
+        } else {
+            // East/West portals
+            backPortal.rotation.x = Math.PI / 2;
+            backPortal.position.z += portalRadius * 2.5;
+            if (dir.name === "East") {
+                backPortal.rotation.y = Math.PI / 2;
+            } else if (dir.name === "West") {
+                backPortal.rotation.y = -Math.PI / 2;
+            }
+        }
+        
+        scene.add(backPortal);
+        backPortal.userData.isPortal = true;
+        backPortal.userData.destination = "back";
+        backPortal.userData.direction = dir.name;
+        backPortal.userData.normal = dir.facing;
+        
+        // Create portal label
+        createPortalLabel(backPortal, "Vibeverse portals", "Back");
+        window.portalRings.push(backPortal);
+        
+        // "Next" portal - slightly offset to the right
+        const nextPortal = new THREE.Mesh(portalGeometry, portalMaterial.clone());
+        nextPortal.position.copy(dir.position);
+        nextPortal.position.y = portalHeight; // Raised higher
+        
+        // Apply offset based on direction (right side of the pair)
+        if (dir.name === "North" || dir.name === "South") {
+            nextPortal.rotation.x = 0;
+                        
+            if (dir.name === "South") {
+                nextPortal.rotation.y = Math.PI;
+            }
+        } else {
+            nextPortal.rotation.x = Math.PI / 2;
+            
+            if (dir.name === "East") {
+                nextPortal.rotation.y = Math.PI / 2;
+            } else if (dir.name === "West") {
+                nextPortal.rotation.y = -Math.PI / 2;
+            }
+        }
+        
+        scene.add(nextPortal);
+        nextPortal.userData.isPortal = true;
+        nextPortal.userData.destination = "next";
+        nextPortal.userData.direction = dir.name;
+        nextPortal.userData.normal = dir.facing;
+        
+        // Create portal label
+        createPortalLabel(nextPortal, "Vibeverse portals", "Next");
+        window.portalRings.push(nextPortal);
+    });
+
+}
+
+function createPortalLabel(portal, mainText, subText) {
+    // Create canvas for text
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    canvas.width = 512;
+    canvas.height = 256;
+    
+    // Fill with transparent background
+    context.fillStyle = 'rgba(0, 0, 0, 0.0)';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    
+    // Add main text with glow
+    context.font = 'bold 36px Arial';
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    
+    // Glow effect
+    context.shadowColor = '#00ff77';
+    context.shadowBlur = 15;
+    context.fillStyle = '#ffffff';
+    context.fillText(mainText, canvas.width / 2, canvas.height / 3);
+    
+    // Add sub text below
+    context.font = 'bold 48px Arial';
+    context.fillText(subText, canvas.width / 2, canvas.height * 2/3);
+    
+    // Create texture and material
+    const texture = new THREE.CanvasTexture(canvas);
+    const labelMaterial = new THREE.MeshBasicMaterial({
+        map: texture,
+        transparent: true,
+        side: THREE.DoubleSide
+    });
+    
+    // Create label plane
+    const labelGeometry = new THREE.PlaneGeometry(50, 25);
+    const label = new THREE.Mesh(labelGeometry, labelMaterial);
+    
+    // Position label above the portal
+    label.position.copy(portal.position);
+    label.position.y += 45; // Position higher above the portal
+    
+    // Make ALL text face toward the city center for readability
+    // First, get direction from portal to city center
+    const dirToCity = new THREE.Vector3().subVectors(
+        new THREE.Vector3(0, label.position.y, 0), // City center at same height
+        label.position
+    ).normalize();
+    
+    // Make the label face the city
+    const labelDirection = new THREE.Vector3(0, 0, 1); // Default forward vector
+    label.quaternion.setFromUnitVectors(labelDirection, dirToCity);
+    
+    scene.add(label);
+    
+    // Store reference to label
+    portal.userData.label = label;
+}
+
+
+function checkPortalCollisions() {
+    if (!gameActive || resetDelay > 0 || !missile.visible) return false;
+    
+    if (!window.portalRings) return false;
+    
+    // Check each portal
+    for (const portal of window.portalRings) {
+        // Distance to portal center
+        const portalPos = portal.position;
+        const distToPortalCenter = missile.position.distanceTo(portalPos);
+        
+        // Check if close to portal
+        if (distToPortalCenter < 40) {
+            // More precise collision check - are we passing through the ring?
+            // Vector from missile to portal center
+            const toPortal = new THREE.Vector3().subVectors(portalPos, missile.position);
+            
+            // Get portal facing direction (stored in userData)
+            const portalNormal = portal.userData.normal;
+            
+            // Distance to portal plane
+            const distToPlane = toPortal.dot(portalNormal);
+            
+            // If we're close to the portal plane and within ring radius
+            if (Math.abs(distToPlane) < 5) {
+                // Project missile position onto portal plane to get position within ring
+                const projectedPoint = missile.position.clone().add(
+                    portalNormal.clone().multiplyScalar(distToPlane)
+                );
+                
+                // Check distance from projected point to portal center (in the plane)
+                projectedPoint.y -= portalPos.y; // Adjust for portal height
+                const distInRing = new THREE.Vector2(
+                    projectedPoint.x - portalPos.x, 
+                    projectedPoint.z - portalPos.z
+                ).length();
+                
+                // If within the ring, trigger portal effect!
+                if (distInRing < portal.geometry.parameters.radius - 5) {
+                    console.log(`Entered ${portal.userData.destination} portal in ${portal.userData.direction} direction!`);
+                    
+                    // Create transition effect
+                    createPortalTransitionEffect(portal);
+                    
+                    // Navigate to destination
+                    navigateToPortalDestination(portal);
+                    
+                    return true; // Portal entered
+                }
+            }
+        }
+    }
+    
+    return false;
+}
+
+// Create visual effect for portal transition
+function createPortalTransitionEffect(portal) {
+    const flash = document.createElement('div');
+    flash.style.position = 'fixed';
+    flash.style.top = '0';
+    flash.style.left = '0';
+    flash.style.width = '100%';
+    flash.style.height = '100%';
+    flash.style.backgroundColor = portal.userData.destination === 'next' ? '#00ff77' : '#3366ff';
+    flash.style.opacity = '0';
+    flash.style.transition = 'opacity 0.8s';
+    flash.style.pointerEvents = 'none';
+    flash.style.zIndex = '1000';
+    document.body.appendChild(flash);
+    
+    // Fade in
+    setTimeout(() => {
+        flash.style.opacity = '0.6';
+    }, 10);
+}
+
+// Navigate to portal destination
+function navigateToPortalDestination(portal) {
+    // Get destination URL based on portal type
+    let destinationUrl;
+    
+    if (portal.userData.destination === 'back' && entryPortalRef) {
+        // This is a "back" portal, go to where player came from if available
+        destinationUrl = entryPortalRef;
+    } else {
+        // This is a "next" portal, go to portal.pieter.com
+        destinationUrl = portalConfig.next;
+    }
+    
+    // Add query parameters
+    const params = new URLSearchParams();
+    params.append('portal', 'true');
+    params.append('username', playerStats.name);
+    params.append('color', playerStats.color || '#ff3333');
+    params.append('speed', Math.round(velocity * 20)); // Convert to compatible speed units
+    
+    // Add ref parameter (where player is coming from)
+    params.append('ref', portalConfig.self); // Base URL without params
+    
+    // Combine URL with params
+    const fullUrl = destinationUrl.includes('?') 
+        ? `${destinationUrl}&${params.toString()}`
+        : `${destinationUrl}?${params.toString()}`;
+
+        // Create visual effect for transition
+    createPortalTransitionEffect(portal);
+    
+    // Pause the game
+    gameActive = false;
+    
+    // Navigate after the transition animation
+    setTimeout(() => {
+        window.location.href = fullUrl;
+    }, 1000);
+}
+
+function handleIncomingPortal() {
+    const urlParams = new URLSearchParams(window.location.search);
+    
+    // Check if player came through a portal
+    if (urlParams.get('portal') === 'true') {
+        console.log("Player arrived through portal!");
+        
+        // Store reference to previous game for "Back" portal
+        entryPortalRef = urlParams.get('ref');
+        
+        // Set player name if provided
+        if (urlParams.get('username')) {
+            playerStats.name = urlParams.get('username');
+        }
+        
+        // Set missile color if provided
+        if (urlParams.get('color')) {
+            const incomingColor = urlParams.get('color');
+            playerStats.color = incomingColor;
+            
+            // Apply color to missile
+            if (missile && missile.children && missile.children[0]) {
+                missile.children[0].material.color.set(incomingColor);
+            }
+        }
+        
+        // Set incoming speed if provided
+        if (urlParams.get('speed')) {
+            const incomingSpeed = parseFloat(urlParams.get('speed'));
+            if (!isNaN(incomingSpeed)) {
+                // Map the incoming speed to our game's velocity scale
+                velocity = Math.max(baseVelocity, Math.min(maxVelocity, incomingSpeed / 20));
+            }
+        }
+        
+         // Skip start menu, go directly to game
+         gameActive = true;
+        
+        // Show welcome message
+        showPortalWelcomeMessage();
+    }
+}
 
         
-        function resetMissile() {
-            // Reset crash flag
-            handleCrash.inProgress = false;
+function resetMissile() {
+    // Reset crash flag
+    handleCrash.inProgress = false;
 
-            // Choose a random spawn position
-            if (playerMarker) {
-                  playerMarker.rotation.x = Math.PI / 2;
-                    playerMarker.rotation.z = Math.PI; // Match the initial setup rotation
-                }
-
-            const spawnIndex = Math.floor(Math.random() * spawnPoints.length);
-            currentSpawnPoint = spawnPoints[spawnIndex];
-            
-            // Set missile position
-            missile.position.copy(currentSpawnPoint);
-            missile.visible = true;
-            
-            // Set missile direction to face the city center
-            const dirToCenter = new THREE.Vector3(0, 0, 0).sub(currentSpawnPoint).normalize();
-            missileDirection.copy(dirToCenter);
-            missileDirection.y = 0; // Keep level with ground
-            missileDirection.normalize();
-
-            initialMissileAngle = Math.atan2(missileDirection.x, missileDirection.z);
+    // Choose random spawn point
+    const spawnIndex = Math.floor(Math.random() * spawnPoints.length);
+    currentSpawnPoint = spawnPoints[spawnIndex].clone();
     
-            let mapRotation = Math.PI + initialMissileAngle;
-
-            minimapContainer.style.transform = `rotate(${mapRotation}rad)`;
-            
-            // Align missile with direction
-            const missileUp = new THREE.Vector3(0, 1, 0);
-            const missileRotation = new THREE.Quaternion().setFromUnitVectors(
-                new THREE.Vector3(0, 0, 1), 
-                missileDirection
-            );
-            missile.quaternion.copy(missileRotation);
-            
-            // Reset velocity
-            velocity = baseVelocity;
-            turnVelocity.set(0, 0, 0);
-            isAccelerating = false;
-            
-            // Reset flight time
-            startTime = Date.now();
-            elapsedTime = 0;
-        }
+    // Move spawn point slightly inward so portal is behind the player
+    // This vector points from spawn point toward city center
+    const towardCityVector = new THREE.Vector3()
+        .subVectors(new THREE.Vector3(0, currentSpawnPoint.y, 0), currentSpawnPoint)
+        .normalize()
+        .multiplyScalar(60); // Move 60 units closer to city
+    
+    currentSpawnPoint.add(towardCityVector);
+    
+    // Set missile position
+    missile.position.copy(currentSpawnPoint);
+    missile.visible = true;
+    
+    // Set initial direction based on spawn point (always toward city center)
+    missileDirection.set(-currentSpawnPoint.x, 0, -currentSpawnPoint.z);
+    if (missileDirection.length() < 0.1) {
+        // Fallback for edge case
+        missileDirection.set(0, 0, -1);
+    }
+    missileDirection.normalize();
+    
+    // Make sure it's not heading too much up or down
+    missileDirection.y = 0;
+    missileDirection.normalize();
+    
+    // Align missile with direction
+    const missileRotation = new THREE.Quaternion().setFromUnitVectors(
+        new THREE.Vector3(0, 1, 0), 
+        missileDirection
+    );
+    missile.quaternion.copy(missileRotation);
+    
+    // Reset velocity
+    velocity = baseVelocity;
+    turnVelocity.set(0, 0, 0);
+    isAccelerating = false;
+    
+    // Reset flight time
+    startTime = Date.now();
+    elapsedTime = 0;
+    
+    // Don't reset camera position immediately - it will be handled by updateCamera()
+    // The key is to let the smoothing system handle the transition naturally
+}
         
         /*
         function createFireAndSmoke() {
@@ -2859,28 +3450,20 @@ function updateParticles(delta) {
         
         function updateHUD() {
             if (!gameActive) return;
-            
-            // Update flight time
-            elapsedTime = (Date.now() - startTime) / 1000;
-            document.getElementById('flightTime').textContent = elapsedTime.toFixed(1);
-            
-            // Update targets
-            document.getElementById('targetsRemaining').textContent = stats.targetsRemaining;
-            document.getElementById('targetsDestroyed').textContent = stats.targetsDestroyed;
-            document.getElementById('crashes').textContent = stats.crashes;
-            document.getElementById('avgFlightTime').textContent = avgFlightTime.toFixed(1);
-            document.getElementById('direction').textContent = getCardinalDirection(missileDirection);
-            document.getElementById('altitude').textContent = Math.round(missile.position.y);
-            document.getElementById('speed').textContent = Math.round(velocity * 100); // Scale for display
-            
-
-             // Update the score
-             updateScore();
-            document.getElementById('score').textContent = Math.floor(score);
-        }
+    
+    // Update only the required elements
+    document.getElementById('direction').textContent = getCardinalDirection(missileDirection);
+    document.getElementById('altitude').textContent = Math.round(missile.position.y);
+    document.getElementById('speed').textContent = Math.round(velocity * 100); // Scale for display
+}
         
         function checkCollisions() {
             if (!gameActive || resetDelay > 0 || !missile.visible) return;
+    
+    // Check portal collisions first
+    if (checkPortalCollisions()) {
+        return; // Portal collision takes precedence
+    }
             
             // Missile dimensions
             const missileLength = 7;
@@ -3095,14 +3678,40 @@ function updateParticles(delta) {
             // Update stats
             stats.targetsDestroyed++;
             stats.targetsRemaining--;
+
+            // Update player stats
+            playerStats.targetsDestroyed++;
+
+            // Also update Firebase with the new achievement!
+            syncPlayerStatsToFirebase();
+    
+            // Update leaderboard immediately to show new TPM
+            updateLeaderboard();
+    
+            // Add highlight effect to player entry
+              setTimeout(() => {
+           const playerEntry = document.getElementById(`player-${playerStats.id}`);
+              if (playerEntry) {
+            playerEntry.classList.add('highlight');
+            // Remove class after animation completes
+            setTimeout(() => playerEntry.classList.remove('highlight'), 1500);
+            }
+           }, 100);
             
             // Check if all targets are destroyed
             if (stats.targetsRemaining <= 0) {
-                setTimeout(() => {
-                showGameOver();
-              }, 3000); // 3 second delay
-                return;
-            }
+        // Don't set resetDelay so we won't spawn a new missile
+        resetDelay = 0;
+        
+        // We'll skip the normal reset process and just show the game over screen after a delay
+        setTimeout(() => {
+            showGameOver();
+        }, 3000); // 3 second delay
+        
+        // We still need missile to be hidden
+        missile.visible = false;
+        return;
+    }
             
             finishFlight();
             
@@ -3151,109 +3760,124 @@ function cleanupScorchMarks() {
         }
         
         function showGameOver() {
-     gameActive = false;
-     stopFlightSounds(); 
-     
-     if (animationFrameId) {
+    gameActive = false;
+    stopFlightSounds(); 
+    
+    if (animationFrameId) {
         cancelAnimationFrame(animationFrameId);
         animationFrameId = null;
-     }
-     
-     document.getElementById('gameOverScreen').style.display = 'block';
-     document.getElementById('hud').style.display = 'none';
-     document.getElementById('minimap').style.display = 'none';
-     
-     document.getElementById('gameOverStats').innerHTML = `
-        <p><strong>▶ Targets destroyed:</strong> ${stats.targetsDestroyed}</p>
-        <p><strong>▶ Crashes:</strong> ${stats.crashes}</p>
-        <p><strong>▶ Average flight time:</strong> ${avgFlightTime.toFixed(1)}s</p>
-        <p style="font-size: 24px; color: #ff3333; margin-top: 15px;"><strong>FINAL SCORE: ${Math.floor(score)}</strong></p>
-     `;
-}
+    }
+    
+    // Show game over screen with "Mission Complete!" message only
+    document.getElementById('gameOverScreen').style.display = 'block';
+    document.getElementById('hud').style.display = 'none';
+    document.getElementById('minimap').style.display = 'none';
+    
+    document.getElementById('gameOverScreen').innerHTML = `
+        <div class="corner-decoration top-left"></div>
+        <div class="corner-decoration top-right"></div>
+        <div class="corner-decoration bottom-left"></div>
+        <div class="corner-decoration bottom-right"></div>
         
-
-        
-        function restartGame() {
-            document.getElementById('gameOverScreen').style.display = 'none';
-            document.getElementById('hud').style.display = 'block';
-            document.getElementById('minimap').style.display = 'block';
-            createHudElements(); // Create HUD elements again
-            
-            // Reset game state
-            stats.targetsRemaining = 0;
-            stats.targetsDestroyed = 0;
-            stats.crashes = 0;
-            flightTimes = [];
-            avgFlightTime = 0;
-            
-            // Clear old buildings
-            for (let i = buildings.length - 1; i >= 0; i--) {
-                disposeObject(buildings[i]);
-            }
-            buildings = [];
-            targetBuildings = [];
-
-            // Clear old scorch marks
-    for (let i = scorchMarks.length - 1; i >= 0; i--) {
-        disposeObject(scorchMarks[i]);
-        scorchMarks.splice(i, 1);
-    }
-
-    if (globalScorchTimer) {
-    clearInterval(globalScorchTimer);
-    globalScorchTimer = null;
-}
+        <h2>Mission Complete!</h2>
+        <div class="mission-transition">Next mission starting...</div>
+    `;
     
-    // Clear old enemy missiles
-    for (let i = enemyMissiles.length - 1; i >= 0; i--) {
-        disposeObject(enemyMissiles[i]);
-        enemyMissiles.splice(i, 1);
-    }
-    
-    // Clear particles
-    for (let i = smokeParticles.length - 1; i >= 0; i--) {
-        disposeObject(smokeParticles[i]);
-        smokeParticles.splice(i, 1);
-    }
-    
-    for (let i = explosionParticles.length - 1; i >= 0; i--) {
-        disposeObject(explosionParticles[i]);
-        explosionParticles.splice(i, 1);
-    }
-
-    // Clean up event listeners before restarting
-    window.removeEventListener('resize', onWindowResize);
-    document.removeEventListener('keydown', onKeyDown);
-    document.removeEventListener('keyup', onKeyUp);
-    if (window.DeviceOrientationEvent) {
-    window.removeEventListener('deviceorientation', handleDeviceOrientation);
-    }
-
-    // Re-attach them
-    window.addEventListener('resize', onWindowResize);
-    document.addEventListener('keydown', onKeyDown);
-    document.addEventListener('keyup', onKeyUp);
-    if (window.DeviceOrientationEvent) {
-    window.addEventListener('deviceorientation', handleDeviceOrientation);
-    }
-            
-            // Create new city
-            createCity();
-            
-            gameActive = true;
-            resetMissile();
-
-            // Start launch animation
-            launchAnimation = true;
-             launchAnimationTime = 0;
-    
-             // explicitly play sounds at restart
-              playSound('ui');
-             playSound('missile');
-
-            lastTime = 0;  // Reset time tracking
-            animationFrameId = requestAnimationFrame(animate);
+    // Add animation style for mission transition text
+    const style = document.createElement('style');
+    style.textContent = `
+        .mission-transition {
+            font-size: 24px;
+            margin-top: 20px;
+            color: #66ccff;
+            animation: pulse 1.5s infinite;
         }
+        
+        @keyframes pulse {
+            0% { opacity: 0.5; }
+            50% { opacity: 1.0; }
+            100% { opacity: 0.5; }
+        }
+    `;
+    document.head.appendChild(style);
+    
+    // Automatically restart after 2 seconds - but without showing the second screen
+    window.gameOverTimeout = setTimeout(() => {
+        // Just restart the game directly
+        restartGame();
+    }, 2000); // Keep the 2 second delay
+}
+        
+
+        
+// Update the restartGame function to preserve camera transition
+function restartGame() {
+    // Clear any existing timeouts to prevent multiple game starts
+    if (window.gameOverTimeout) {
+        clearTimeout(window.gameOverTimeout);
+        window.gameOverTimeout = null;
+    }
+
+    // Don't reset these values - preserves camera position during transition
+    // resetDelay = 0;
+    // cameraTarget = null;
+
+    document.getElementById('gameOverScreen').style.display = 'none';
+    document.getElementById('hud').style.display = 'block';
+    document.getElementById('minimap').style.display = 'block';
+    createHudElements(); // Create HUD elements again
+    
+    // Reset game state
+    stats.targetsRemaining = 0;
+    stats.targetsDestroyed = 0;
+    stats.crashes = 0;
+    flightTimes = [];
+    avgFlightTime = 0;
+    
+    // Clear old buildings
+    for (let i = buildings.length - 1; i >= 0; i--) {
+        disposeObject(buildings[i]);
+    }
+    buildings = [];
+    targetBuildings = [];
+
+    // Clear old scorch marks and other effects
+    // (existing cleanup code)
+    
+    // Create new city
+    createCity();
+    
+    // IMPORTANT CHANGE: Create the missile but don't reset camera position
+    if (!missile.visible) {
+        resetMissile();
+        
+        // Preserve camera's smooth transition by manually setting the initial smoothed positions
+        // This prevents the camera "jump" by starting where the camera currently is
+        smoothedCameraPosition.copy(camera.position);
+        
+        // Calculate where the camera should be looking (slightly ahead of missile)
+        const lookTarget = missile.position.clone().add(
+            missileDirection.clone().multiplyScalar(10)
+        );
+        smoothedCameraLookAt.copy(lookTarget);
+        
+        // Make sure missile is visible
+        missile.visible = true;
+    }
+    
+    gameActive = true;
+    
+    // Explicitly play sounds at restart
+    playSound('ui');
+    playSound('missile');
+    
+    // Reset animation frame handling
+    if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+    }
+    lastTime = 0;  // Reset time tracking
+    animationFrameId = requestAnimationFrame(animate);
+}
         
         function onWindowResize() {
             camera.aspect = window.innerWidth / window.innerHeight;
@@ -4014,6 +4638,16 @@ function updateEnemyMissiles(delta) {
     }
 }
 
+function updatePortalMaterials(delta = 0.016) {
+    if (!window.portalRings) return;
+    
+    for (const portal of window.portalRings) {
+        if (portal.material && portal.material.uniforms && portal.material.uniforms.time) {
+            portal.material.uniforms.time.value += delta;
+        }
+    }
+}
+
 // Add adaptive resolution during intense action
 function adjustResolutionForPerformance() {
     if (explosionParticles.length > 80) {
@@ -4372,33 +5006,127 @@ function createEnemyMissileSmoke(enemyMissile) {
     smokeParticles.push(smoke);
 }
 
-function updateScore() {
-    // Base formula: 
-    // - Each target destroyed: +1000 points
-    // - Time efficiency bonus: faster than avg gets bonus
-    // - Crash penalty: -200 points per crash
+function addDummyPlayers() {
+    // Add some fake players for testing
+    const dummyPlayers = [
+        { id: "cpu_1", name: "Marksman42", targetsDestroyed: 12, totalPlayTimeSeconds: 180, tpm: 4.0 },
+        { id: "cpu_2", name: "SkyStalker", targetsDestroyed: 18, totalPlayTimeSeconds: 320, tpm: 3.4 },
+        { id: "cpu_3", name: "MissileWizard", targetsDestroyed: 8, totalPlayTimeSeconds: 150, tpm: 3.2 },
+        { id: "cpu_4", name: "StrikeForce", targetsDestroyed: 5, totalPlayTimeSeconds: 120, tpm: 2.5 },
+        { id: "cpu_5", name: "TargetLocked", targetsDestroyed: 4, totalPlayTimeSeconds: 180, tpm: 1.3 }
+    ];
     
-    // Base score from targets
-    const baseScore = stats.targetsDestroyed * 1000;
-    
-    // Time efficiency bonus
-    let timeBonus = 0;
-    if (stats.targetsDestroyed > 0 && avgFlightTime > 0) {
-        // If current flight time is better than average, give bonus
-        if (elapsedTime < avgFlightTime) {
-            timeBonus = (avgFlightTime - elapsedTime) * 100;
-        }
+    leaderboard = [...dummyPlayers];
+}
+
+
+
+function createLeaderboard() {
+    // Create leaderboard container if it doesn't exist
+    if (!document.getElementById('leaderboard')) {
+        const leaderboardDiv = document.createElement('div');
+        leaderboardDiv.id = 'leaderboard';
+        leaderboardDiv.innerHTML = `
+            <div class="leaderboard-title">MISSILE PILOTS</div>
+            <table class="leaderboard-table">
+                <thead>
+                    <tr>
+                        <th>PILOT</th>
+                        <th>TPM</th>
+                        <th>HITS</th>
+                        <th>CRASHES</th>
+                    </tr>
+                </thead>
+                <tbody id="leaderboard-entries">
+                    <!-- Will be populated dynamically -->
+                </tbody>
+            </table>
+        `;
+        document.body.appendChild(leaderboardDiv);
     }
     
-    // Crash penalty
-    const crashPenalty = stats.crashes * 200;
-    
-    // Calculate final score
-    score = baseScore + timeBonus - crashPenalty;
-    
-    // Ensure score doesn't go negative
-    score = Math.max(0, score);
+    // Initial update
+    updateLeaderboard();
 }
+
+function updatePlayerStats(delta) {
+    if (!gameActive || resetDelay > 0) return;
+    
+    // Update active play time
+    playerStats.activePlayTimeSeconds += delta;
+    playerStats.totalPlayTimeSeconds += delta;
+    
+    // Calculate current TPM
+    playerStats.tpm = calculateTPM(playerStats.targetsDestroyed, playerStats.totalPlayTimeSeconds);
+    
+}
+
+// Kills Per Minute calculation
+function calculateTPM(targetsDestroyed, playTimeSeconds) {
+    if (playTimeSeconds <= 0) return 0;
+    
+    // Calculate Targets Per Minute
+    const playTimeMinutes = playTimeSeconds / 60;
+    return targetsDestroyed / playTimeMinutes;
+}
+
+// Add function to update the leaderboard
+function updateLeaderboard() {
+    const leaderboardElement = document.getElementById('leaderboard');
+    if (!leaderboardElement) return;
+    
+    // Create header if it doesn't exist
+    if (!document.querySelector('.leaderboard-title')) {
+        leaderboardElement.innerHTML = `
+            <div class="leaderboard-title">Global Leaderboard</div>
+            <table class="leaderboard-table">
+                <thead>
+                    <tr>
+                        <th>Player</th>
+                        <th>TPM</th>
+                        <th>Targets</th>
+                    </tr>
+                </thead>
+                <tbody id="leaderboard-entries">
+                </tbody>
+            </table>
+        `;
+    }
+    
+    const leaderboardEntries = document.getElementById('leaderboard-entries');
+    if (!leaderboardEntries) return;
+    
+    // Generate HTML
+    let html = '';
+    for (let i = 0; i < leaderboard.length; i++) {
+        const player = leaderboard[i];
+        const isCurrentPlayer = player.id === playerStats.firebaseId;
+        
+        html += `
+            <tr id="player-${player.id}" class="${isCurrentPlayer ? 'you' : ''}">
+                <td class="name" style="color: ${player.color}">
+                    ${isCurrentPlayer ? '➤ ' : ''}${player.name}
+                </td>
+                <td class="tpm">${player.tpm.toFixed(2)}</td>
+                <td>${player.targetsDestroyed}</td>
+            </tr>
+        `;
+    }
+    
+    leaderboardEntries.innerHTML = html;
+}
+
+function syncPlayerStatsToFirebase() {
+    // Don't update too frequently - do it every 10 seconds or on important events
+    if (playerStats.firebaseId) {
+        // Update all-time stats
+        playerStats.allTimeTargetsDestroyed = (playerStats.allTimeTargetsDestroyed || 0) + playerStats.targetsDestroyed;
+        
+        updatePlayerInFirebase();
+    }
+}
+
+
 
 function optimizeBuildingMaterials() {
     buildings.forEach(building => {
@@ -4471,6 +5199,21 @@ function updatePhysics(timeStep) {
 
     // If game is active, update game elements
     if (gameActive) {
+         // Update player KPM stats
+         updatePlayerStats(delta);
+
+         // Periodically sync to Firebase
+    lastFirebaseSync += delta;
+    if (lastFirebaseSync >= FIREBASE_SYNC_INTERVAL) {
+        syncPlayerStatsToFirebase();
+        lastFirebaseSync = 0; // Reset timer
+    }
+        
+        // Update leaderboard every 2 seconds (for performance)
+        if (Math.floor(currentTime / 2000) > Math.floor(lastTime / 2000)) {
+            updateLeaderboard();
+        }
+
         // Handle launch animation
         if (launchAnimation) {
             handleLaunchAnimation(delta);
@@ -4486,6 +5229,16 @@ function updatePhysics(timeStep) {
             checkCollisions();
         }
         
+          // Update portal ring shader time
+    if (window.portalRings) {
+        const shaderTime = performance.now() * 0.001;
+        window.portalRings.forEach(portal => {
+            if (portal.material.uniforms) {
+                portal.material.uniforms.time.value = shaderTime;
+            }
+        });
+    }
+
         // Update time value for explosion shader animation
         const shaderTime = performance.now() * 0.001;
         for (let i = 0; i < explosionParticles.length; i++) {
@@ -4512,6 +5265,7 @@ function updatePhysics(timeStep) {
     updateMinimap();
     updateScorchMarks(delta);
     updatePhysics(delta);
+    updatePortalMaterials(delta);
     
     // Apply screen shake directly rather than in separate function
     if (screenShakeTime > 0) {
