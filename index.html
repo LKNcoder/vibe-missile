@@ -212,9 +212,9 @@
         
 
 
-#controlsOverlay {
+    #controlsOverlay {
     position: absolute;
-    bottom: 50px;
+    top: 65%;  
     left: 50%;
     transform: translateX(-50%);
     color: white;
@@ -368,6 +368,16 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
 
     <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Update control overlay position to be higher on screen (middle instead of bottom)
+            const controlsOverlay = document.getElementById('controlsOverlay');
+            if (controlsOverlay) {
+                controlsOverlay.style.bottom = 'auto';  // Remove bottom positioning
+                controlsOverlay.style.top = '65%';      // Position in upper-middle of screen
+                controlsOverlay.style.transform = 'translateX(-50%)';
+            }
+        });
+
         // Game variables
         let scene, camera, renderer, missile, city;
         let buildings = [], targetBuildings = [];
@@ -423,6 +433,7 @@
         const cameraSmoothingFactor = 0.08; // Lower = smoother but slower
         let initialMissileAngle = 0;
         let minimapContainer;
+        let minimapFixedRotation = 0;
         let exhaustGlow = null;
         let globalScorchTimer = null;
         let globalScorchInterval = 100; // milliseconds
@@ -434,8 +445,14 @@
         let leaderboardListener = null;
         let lastFirebaseSync = 0;
         const FIREBASE_SYNC_INTERVAL = 10; // Sync every 10 seconds
-        
+        let smokeTimer = 0;
+        let particleBatches = []; 
+        let minimapTimer = 0;
+        let hudTimer = 0;
+        let scorchMarksTimer = 0;
 
+        
+        const BATCH_SIZE = 100;
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
         
         const MAX_SMOKE_PARTICLES = isMobile ? 3000 : 10000; 
@@ -465,6 +482,14 @@
     const globalSmokeInterval = 0.2; // How often to check for smoke emission (seconds)
     const globalSmokeChance = 0.7; // Base probability for emitting smoke
     let globalWindDirection = new THREE.Vector3(0.3, 0, 0.2); // Shared wind direction
+
+    const gameTimers = {
+    leaderboard: 0,       // Time since last leaderboard update
+    firebaseSync: 0,      // Time since last Firebase sync
+    enemyPilotStats: 0,   // Time since last enemy pilot stats update
+    scorchCleanup: 0,     // Frames since last scorch cleanup
+    effects: 0            // Time since last visual effects update
+};
    
     const sounds = {
     explosion: null,
@@ -488,6 +513,14 @@
     orange: null,
     red: null
 };
+
+let enemyPilotStats = [
+    { id: "cpu_1", name: "Marksman42", targetsDestroyed: 0, crashes: 0, totalPlayTimeSeconds: 60, tpm: 0 },
+    { id: "cpu_2", name: "SkyStalker", targetsDestroyed: 0, crashes: 0, totalPlayTimeSeconds: 90, tpm: 0 },
+    { id: "cpu_3", name: "MissileWizard", targetsDestroyed: 0, crashes: 0, totalPlayTimeSeconds: 75, tpm: 0 },
+    { id: "cpu_4", name: "StrikeForce", targetsDestroyed: 0, crashes: 0, totalPlayTimeSeconds: 120, tpm: 0 },
+    { id: "cpu_5", name: "TargetLocked", targetsDestroyed: 0, crashes: 0, totalPlayTimeSeconds: 85, tpm: 0 }
+];
         
 const portalConfig = {
     next: "https://portal.pieter.com",  // Where "Next" portals go
@@ -515,14 +548,13 @@ const portalConfig = {
         };
 
     // Player tracking for multiplayer
-let playerStats = {
-    id: generatePlayerId(), // We'll create this function
-    name: "You ", // Random player name for now
+    let playerStats = {
+    id: generatePlayerId(),
+    name: "You", 
     targetsDestroyed: 0,
-    totalPlayTimeSeconds: 0,
-    activePlayTimeSeconds: 0,
-    tpm: 0,
-    color: "#ff3333" // Default missile color
+    crashes: 0,
+    roundsWon: 0,
+    color: "#5c5c5c", // Default color
 };
 
 // Leaderboard tracking
@@ -538,6 +570,44 @@ const firebaseConfig = {
     messagingSenderId: "1048243867578",
     appId: "1:1048243867578:web:9c502d5275fcb8a43b5783"
 };
+
+window.geometryPool = {
+    plane: null,
+    sphere: null,
+    cylinder: null
+};
+
+window.materialPool = {
+    smoke: [],
+    fire: [],
+    explosion: [],
+    debris: []
+};
+
+window.particlePool = {
+    smoke: [],
+    fire: [],
+    explosion: []
+};
+
+// Create dot pool for minimap
+window.minimapDotPool = {
+    regular: [],
+    target: [],
+    geometryRegular: null,
+    geometryTarget: null,
+    materialRegular: null,
+    materialTarget: null
+};
+
+// Initialize timing controls
+const updateFrequency = {
+    minimap: 1/20,    // 20 FPS
+    HUD: 1/15,        // 15 FPS
+    scorchMarks: 1/5, // 5 FPS
+    smoke: 1/10       // 10 FPS
+};
+
 
 
 // Generate a unique player ID
@@ -754,6 +824,10 @@ function initColorPicker() {
 
 // Show and hide controls overlay
 function showControlsOverlay() {
+    // Only show if this is the first time (check if we've shown it before)
+    if (window.controlsShown) return;
+    window.controlsShown = true;
+    
     const overlay = document.getElementById('controlsOverlay');
     
     // Show device-appropriate controls
@@ -765,10 +839,17 @@ function showControlsOverlay() {
     
     overlay.style.opacity = "1";
     
-    // Hide after launch animation completes + extended time
+    // Hide after 4 seconds and never show again
     setTimeout(() => {
         hideControlsOverlay();
-    }, 6000);
+    }, 4000);
+}
+
+function hideControlsOverlay() {
+    const overlay = document.getElementById('controlsOverlay');
+    if (overlay) {
+        overlay.style.opacity = "0";
+    }
 }
 
 
@@ -809,12 +890,33 @@ function handleTouchEnd(e) {
  init();
 
  // 1. Remove the startMenu display toggle in init()
-function init() {
+ function init() {
+    // Set timestamp to track game start (for blocking unwanted explosions)
+    window.gameStartTime = Date.now();
+    console.log("Starting game initialization");
+
+    // Cleanup any existing particles/resources
+    cleanupAllParticleSystems();
+
+    // Initialize empty particle arrays
+    smokeParticles = [];
+    explosionParticles = [];
+    particleBatches = [];
+    damagedBuildings = [];
+    scorchMarks = [];
+
+    // Prevent automatic effects during startup
+    window.autoEffectsDisabled = true;
+    
+    // Initialize geometry and particle pools
+    initGeometryPool();
+    initParticlePools();
+
     // Initialize sounds
     initSounds();
     initSoundPool();
 
-    // optimize for mobile
+    // Mobile optimizations
     if (isMobile) {
         optimizeForMobile();
         console.log("Mobile optimizations applied");
@@ -824,14 +926,13 @@ function init() {
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x87CEEB);  // Sky blue
     scene.fog = new THREE.FogExp2(0x87CEEB, 0.0015);
-
     THREE.Object3D.DefaultUp.set(0, 1, 0);
 
-    // Set up the renderer
+    // Set up the renderer with optimal settings
     renderer = new THREE.WebGLRenderer({ 
         antialias: true,
-        powerPreference: "high-performance", // Request high-performance GPU
-        precision: "mediump" // Use medium precision shaders on mobile
+        powerPreference: "high-performance", 
+        precision: "mediump" 
     });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.shadowMap.enabled = false;
@@ -842,40 +943,61 @@ function init() {
     const ambientLight = new THREE.AmbientLight(0x404040, 1);
     scene.add(ambientLight);
 
-    // Improve directional light for better shadows
+    // Directional light setup
     const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
     directionalLight.position.set(200, 300, 100);
     directionalLight.castShadow = false;
-    
-    // Increase shadow map size for more detailed shadows
     directionalLight.shadow.mapSize.width = 1024;
     directionalLight.shadow.mapSize.height = 1024;
-    
-    // Add shadow bias to reduce shadow acne
     directionalLight.shadow.bias = -0.001;
-    
     scene.add(directionalLight);
+
+    // Camera setup
+    camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+    
+    // Initialize camera reference frame immediately
+    camera.userData = {
+        verticalReferenceFrame: {
+            forward: new THREE.Vector3(0, 0, -1),
+            right: new THREE.Vector3(1, 0, 0),
+            up: new THREE.Vector3(0, 1, 0)
+        }
+    };
+    
+    // Define smoothedCameraPosition and smoothedCameraLookAt
+    smoothedCameraPosition = new THREE.Vector3();
+    smoothedCameraLookAt = new THREE.Vector3();
+    ensureCameraReferences();
+
+    // Initialize enemy pilots
+    initializeEnemyPilots();
 
     // Create the terrain
     createTerrain();
        
-    // Create the city
+    // Create the city with buildings
     createCity();
-
-    createPortalRings(); // Create portal rings
     
-    // Set up the minimap
+    // Create the missile (player object)
+    createMissile();
+    
+    // Add portal rings at a safe point after core components are ready
+    setTimeout(() => {
+        createPortalRings();
+    }, 500);
+
+    // Set up the minimap after city is created
     setupMinimap();
 
-    createLeaderboard(); // Create leaderboard
- 
-    // Create the missile
-    createMissile();
+    // Initialize leaderboard and UI components
+    createLeaderboard();
+    setTimeout(updateLeaderboard, 500);
 
-    initExplosionTextures(); // Initialize explosion textures once
-    initEnemyExplosionMaterials(); // Initialize enemy explosion materials
+    // Initialize explosion materials
+    initExplosionTextures();
+    initEnemyExplosionMaterials();
     
-    // Event listeners
+    // Set up event listeners
     window.addEventListener('resize', onWindowResize);
     document.addEventListener('keydown', onKeyDown);
     document.addEventListener('keyup', onKeyUp);
@@ -885,40 +1007,18 @@ function init() {
         window.addEventListener('deviceorientation', handleDeviceOrientation);
     }
 
-    if (isMobile) {
-        optimizeForMobile();
-        
-        // Replace standard control instructions
-        if (document.getElementById('controlsOverlay')) {
-            document.getElementById('controlsOverlay').innerHTML = 
-                'TILT DEVICE TO STEER • TAP SCREEN TO ACCELERATE';
-        }
-        
-        // Set up mobile-specific game properties
-        baseVelocity = 0.5; // Slower base speed for easier control
-        turnSpeed *= 0.8; // Gentler turns
-        damping = 0.8; // More damping for smoother controls
-        
-        // Disable or simplify heavy effects
-        MAX_SMOKE_PARTICLES = 2000;
-        MAX_EXPLOSION_PARTICLES = 5000;
-    }
-    
-    // Create camera with proper perspective
-    camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
-    
-    // Initialize game directly - no start menu
+    // Initialize game state
     document.getElementById('hud').style.display = 'block';
     document.getElementById('minimap').style.display = 'block';
     createHudElements();
     gameActive = true;
     resetMissile();
     
-    // Skip launch animation
+    // Skip launch animation for immediate gameplay
     launchAnimation = false;
     velocity = baseVelocity;
     
-    // Set up camera position immediately
+    // Set up immediate camera position
     const cameraPos = missile.position.clone().sub(
         missileDirection.clone().multiplyScalar(cameraOffset.z)
     );
@@ -928,30 +1028,23 @@ function init() {
     smoothedCameraPosition.copy(camera.position);
     smoothedCameraLookAt.copy(missile.position);
     
-    // Show controls briefly to inform player
-    document.getElementById('controlsOverlay').innerHTML = 'USE ARROW KEYS TO MANEUVER • SPACE TO ACCELERATE';
+    // Show controls briefly
+    document.getElementById('controlsOverlay').innerHTML = isMobile ? 
+        'TILT DEVICE TO STEER • TAP SCREEN TO ACCELERATE' :
+        'USE ARROW KEYS TO MANEUVER • SPACE TO ACCELERATE';
     showControlsOverlay();
     
     // Start sounds
     playSound('missile');
     startFlightSound();
 
+    // WebGL error handling
     renderer.domElement.addEventListener('webglcontextlost', function(event) {
         event.preventDefault();
         console.error('WebGL context lost. Attempting recovery...');
-       
+        
         // Clean up resources to help recovery
-        for (let i = smokeParticles.length - 1; i >= 0; i--) {
-            disposeObject(smokeParticles[i]);
-        }
-        smokeParticles = [];
-        
-        for (let i = explosionParticles.length - 1; i >= 0; i--) {
-            disposeObject(explosionParticles[i]);
-        }
-        explosionParticles = [];
-        
-        // Alert user
+        cleanupAllParticleSystems();
         alert("Graphics context lost. Try refreshing the page.");
     }, false);
 
@@ -961,23 +1054,42 @@ function init() {
         requestAnimationFrame(animate);
     }, false);
 
-    initPortals(); // Initialize portals
+    // Initialize Firebase for multiplayer features
+    initFirebase();
+    
+    // Safely initialize portals without unwanted effects
+    initPortals();
 
-    initFirebase(); // Initialize Firebase
+    // Add performance diagnostics
+    if (renderer && renderer.info) {
+        console.log("Initial memory usage:", {
+            geometries: renderer.info.memory.geometries,
+            textures: renderer.info.memory.textures
+        });
+    }
 
-    addDummyPlayers(); // Add dummy players for testing
-
+    // Re-enable automatic effects after a delay
+    setTimeout(() => { 
+        window.autoEffectsDisabled = false; 
+        console.log("Automatic effects enabled");
+    }, 2000);
+    
+    // Reset timers
+    lastTime = 0;
+    minimapTimer = 0;
+    hudTimer = 0;
+    scorchMarksTimer = 0;
+    smokeTimer = 0;
+    
     // Start animation loop
-    lastTime = 0; // Reset lastTime
     requestAnimationFrame(animate);
-}    
+    
+    console.log("Game initialization complete");
+}
 
 function initPortals() {
     // Handle incoming portal parameters
     handleIncomingPortal();
-    
-    // Update materials for portal animation
-    updatePortalMaterials();
 }
 
 function optimizeForMobile() {
@@ -1186,64 +1298,189 @@ function createExplosionShaderMaterial(texture, color) {
     });
 }
 
-        function createHudElements() {
+function createHudElements() {
     // Create HUD elements if they don't exist
     const hud = document.getElementById('hud');
     if (!hud) return;
     
     // Clear any existing content
     hud.innerHTML = `
-        <div class="hud-row"><span>DIRECTION:</span> <span id="direction">N/A</span></div>
-        <div class="hud-row"><span>ALTITUDE:</span> <span id="altitude">0</span>m</div>
-        <div class="hud-row"><span>SPEED:</span> <span id="speed">0</span> km/h</div>
+        <div class="hud-container">
+            <div class="meters-container">
+                <div class="meter-group">
+                    <div class="hud-label">ALTITUDE</div>
+                    <div class="vertical-meter-container">
+                        <div class="vertical-meter-bar-bg">
+                            <div id="altitude-bar" class="vertical-meter-bar"></div>
+                        </div>
+                        <div class="meter-tick-marks"></div>
+                    </div>
+                    <div id="altitude" class="meter-value">0</div>
+                    <div class="meter-unit">m</div>
+                </div>
+                
+                <div class="meter-group">
+                    <div class="hud-label">SPEED</div>
+                    <div class="vertical-meter-container">
+                        <div class="vertical-meter-bar-bg">
+                            <div id="speed-bar" class="vertical-meter-bar"></div>
+                        </div>
+                        <div class="meter-tick-marks"></div>
+                    </div>
+                    <div id="speed" class="meter-value">0</div>
+                    <div class="meter-unit">km/h</div>
+                </div>
+            </div>
+        </div>
     `;
 
-    // Add some CSS for the HUD
+    // Add CSS for the enhanced HUD
     const style = document.createElement('style');
     style.textContent = `
-       #hud {
+        #hud {
             font-family: 'Quantico', sans-serif;
-            padding: 20px;
+            padding: 15px;
             background-color: rgba(0, 0, 0, 0.7);
             border: 1px solid #ff3333;
             border-radius: 5px;
             color: white;
-            min-width: 250px;
             position: absolute;
             top: 20px;
             left: 20px;
-            font-size: 18px; /* Increased font size */
+            font-size: 18px;
         }
-        .hud-row {
-            margin: 5px 0;
+        
+        .hud-container {
             display: flex;
-            justify-content: space-between;
+            justify-content: center;
         }
-        .hud-row span:first-child {
-            margin-right: 15px;
+        
+        .meters-container {
+            display: flex;
+            justify-content: center;
+            width: 130px;
+            gap: 35px; /* Increased from 20px to 35px for more space */
+        }
+        
+        .meter-group {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 45px;
+        }
+        
+        .hud-label {
             color: #aaaaaa;
-        }
-         #direction, #speed, #altitude {
-            color: #66ccff;
-            font-size: 22px; /* Even bigger for values */
             font-weight: bold;
-        }    
-        #tpmValue {
-            color: #ff3333;
-            font-weight: bold;
+            margin-bottom: 5px;
+            font-size: 14px;
+            text-align: center;
+            width: 100%;
         }
-        #score {
-            color: #ff3333;
+        
+        .vertical-meter-container {
+            height: 220px;
+            position: relative;
+            margin: 5px 0;
         }
-        #direction, #speed, #altitude {
+        
+        .vertical-meter-bar-bg {
+            width: 40px; 
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            border: 1px solid #444;
+            position: relative;
+        }
+        
+        .vertical-meter-bar {
+            width: 100%;
+            height: 0%; /* Start with zero height */
+            background-color: #66ccff;
+            position: absolute;
+            bottom: 0; /* IMPORTANT: Position at bottom to grow upward */
+            left: 0;
+            transition: height 0.2s ease-out, background-color 0.3s ease;
+        }
+        
+        .meter-tick-marks {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+        
+        /* Keep remaining CSS the same */
+        .meter-tick-marks::before {
+            content: '';
+            position: absolute;
+            left: -3px;
+            right: -3px;
+            height: 1px;
+            background-color: rgba(255, 255, 255, 0.3);
+        }
+        
+        .meter-tick-marks::after {
+            content: '';
+            position: absolute;
+            left: 0;
+            width: 100%;
+            height: 1px;
+            background-color: rgba(255, 255, 255, 0.3);
+        }
+        
+        /* Add tick marks at various positions */
+        .vertical-meter-container::before {
+            content: '';
+            position: absolute;
+            left: -3px;
+            right: -3px;
+            top: 25%;
+            height: 1px;
+            background-color: rgba(255, 255, 255, 0.3);
+        }
+        
+        .vertical-meter-container::after {
+            content: '';
+            position: absolute;
+            left: -3px;
+            right: -3px;
+            top: 75%;
+            height: 1px;
+            background-color: rgba(255, 255, 255, 0.3);
+        }
+        
+        .vertical-meter-bar-bg::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: 50%;
+            height: 1px;
+            background-color: rgba(255, 255, 255, 0.3);
+        }
+        
+        .meter-value {
             color: #66ccff;
+            font-size: 24px;
+            font-weight: bold;
+            text-align: center;
+            margin-top: 5px;
+            min-width: 50px;
         }
-        #enemyCount {
-            color: #ff6666;
+        
+        .meter-unit {
+            color: #aaaaaa;
+            font-size: 14px;
+            text-align: center;
+            margin-top: 2px;
         }
     `;
     document.head.appendChild(style);
-}       
+}
+
+
 
     function disposeObject(object) {
     if (!object) return;
@@ -1317,6 +1554,30 @@ function logResourceCounts(label) {
         geometryCount: renderer.info.memory.geometries,
         textureCount: renderer.info.memory.textures
     });
+}
+
+function ensureCameraReferences() {
+    // Check if camera exists
+    if (!camera) {
+        console.warn("Camera not initialized yet");
+        return false;
+    }
+    
+    // Make sure userData exists
+    if (!camera.userData) {
+        camera.userData = {};
+    }
+    
+    // Make sure verticalReferenceFrame exists
+    if (!camera.userData.verticalReferenceFrame) {
+        camera.userData.verticalReferenceFrame = {
+            forward: new THREE.Vector3(0, 0, -1),
+            right: new THREE.Vector3(1, 0, 0),
+            up: new THREE.Vector3(0, 1, 0)
+        };
+    }
+    
+    return true;
 }
 
         function createTerrain() {
@@ -1591,6 +1852,8 @@ function logResourceCounts(label) {
 function createMissile() {
     // Create missile group
     missile = new THREE.Group();
+
+    ensureCameraReferences();
     
     // Create the main body (cylinder)
     const bodyGeometry = new THREE.CylinderGeometry(1, 1, 8, 16);
@@ -1685,46 +1948,52 @@ function createMissile() {
 }
 
 function setupMinimap() {
-    // Create container to allow rotation
-    minimapContainer = document.createElement('div');
-    minimapContainer.style.width = '70%';
-    minimapContainer.style.height = '70%';
-    minimapContainer.style.position = 'relative';
-    document.getElementById('minimap').appendChild(minimapContainer);
+    // Initialize the arrays for minimap dots
+    minimapDotPool.target = [];
+    minimapDotPool.regular = [];
+
+    // Get the parent element
+    const minimapParent = document.getElementById('minimap');
+    minimapParent.innerHTML = '';
     
-    // Create minimap renderer inside the container
+    // Set parent styling
+    minimapParent.style.width = '350px';
+    minimapParent.style.height = '350px';
+    minimapParent.style.position = 'absolute';
+    minimapParent.style.bottom = '20px';
+    minimapParent.style.left = '20px';
+    minimapParent.style.overflow = 'hidden';
+    minimapParent.style.border = '2px solid #ff3333';
+    minimapParent.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+    
+    // Create container that WILL rotate
+    minimapContainer = document.createElement('div');
+    minimapContainer.style.width = '100%';
+    minimapContainer.style.height = '100%';
+    minimapContainer.style.position = 'relative';
+    minimapContainer.style.transformOrigin = 'center center';
+    minimapParent.appendChild(minimapContainer);
+    
+    // Create minimap renderer
     minimapRenderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
-    minimapRenderer.setSize(450, 450);
+    minimapRenderer.setSize(350, 350);
     minimapRenderer.setClearColor(0x000000, 0.5);
+    minimapRenderer.domElement.style.position = 'absolute';
     minimapContainer.appendChild(minimapRenderer.domElement);
     
-    // Create a separate scene for minimap
+    // Create minimap scene
     minimapScene = new THREE.Scene();
-
-    // Create minimap camera with increased view area
-    // Increase the visible area by 20% by changing these values
-    const viewExtent = citySize * 0.6; // Increased from 0.5 to show more area
+    
+    // Create orthographic camera for minimap
+    const viewExtent = citySize * 0.6;
     minimapCamera = new THREE.OrthographicCamera(
-        -viewExtent, viewExtent,  // left, right
-        viewExtent, -viewExtent,  // top, bottom
-        1, 1000                   // near, far
+        -viewExtent, viewExtent, viewExtent, -viewExtent, 1, 1000
     );
     minimapCamera.position.set(0, 400, 0);
-    minimapCamera.lookAt(new THREE.Vector3(0, 0, 0));
-    minimapCamera.up.set(0, 0, -1); // North is up in world space
-
-    // Create player marker (circle for directionality)
-    const markerGeometry = new THREE.CircleGeometry(6, 16);
-    const markerMaterial = new THREE.MeshBasicMaterial({
-        color: 0xff0000,
-        side: THREE.DoubleSide
-    });
-    playerMarker = new THREE.Mesh(markerGeometry, markerMaterial);
-    playerMarker.rotation.x = Math.PI / 2; // Make it face upward
-    playerMarker.position.y = 1.0;
-    minimapScene.add(playerMarker);
+    minimapCamera.lookAt(0, 0, 0);
+    minimapCamera.up.set(0, 0, -1); // North is up
     
-    // Create city representation for minimap
+    // Create city representation
     const cityPlaneGeometry = new THREE.PlaneGeometry(citySize, citySize);
     const cityPlaneMaterial = new THREE.MeshBasicMaterial({ 
         color: 0x444444, 
@@ -1734,23 +2003,168 @@ function setupMinimap() {
     const cityPlane = new THREE.Mesh(cityPlaneGeometry, cityPlaneMaterial);
     cityPlane.rotation.x = -Math.PI / 2;
     minimapScene.add(cityPlane);
+    
+    // Initialize building dot pool materials and geometries
+    const regularDotRadius = 1.2;
+    const targetDotRadius = 1.5;
+    
+    // Create shared geometries
+    minimapDotPool.geometryRegular = new THREE.PlaneGeometry(6, 6); // Much bigger squares (10x)
+    minimapDotPool.geometryTarget = new THREE.PlaneGeometry(8, 8);  // Much bigger squares (10x)
+    
+    // Create shared materials
+    minimapDotPool.materialRegular = new THREE.MeshBasicMaterial({color: 0xffffff});
+    minimapDotPool.materialTarget = new THREE.MeshBasicMaterial({color: 0xff0000});
+    
+    // IMPORTANT: Create player marker mesh
+    const playerMarkerSize = 10;
+    const playerTriangleShape = new THREE.Shape();
+    playerTriangleShape.moveTo(0, -playerMarkerSize);
+    playerTriangleShape.lineTo(-playerMarkerSize * 0.6, playerMarkerSize * 0.5);
+    playerTriangleShape.lineTo(playerMarkerSize * 0.6, playerMarkerSize * 0.5);
+    playerTriangleShape.lineTo(0, -playerMarkerSize);
+
+    const playerTriangleGeometry = new THREE.ShapeGeometry(playerTriangleShape);
+    
+    // Use player's color or default gray
+    const markerColor = playerStats.color || '#5c5c5c';
+    const markerMaterial = new THREE.MeshBasicMaterial({
+        color: new THREE.Color(markerColor),
+        side: THREE.DoubleSide
+    });
+    
+    // Create the marker mesh
+    playerMarker = new THREE.Mesh(playerTriangleGeometry, markerMaterial);
+    playerMarker.rotation.x = Math.PI / 2; // Flat on the XZ plane
+    playerMarker.position.y = 2.0; // Slightly above ground
+    
+    // Set initial position (will be updated in updateMinimap)
+    if (missile && missile.position) {
+        playerMarker.position.x = missile.position.x;
+        playerMarker.position.z = missile.position.z;
+    }
+    
+    // Add player marker to the scene
+    minimapScene.add(playerMarker);
+    minimapBuildingDots = []; // Initialize empty array
+    
+    // Add compass indicator
+    addMinimapCompass();
 }
 
-// Update the updateMinimap function to rotate the container
-function updateMinimap() {
-    if (!gameActive) return;
+
+
+function addMinimapCompass() {
+    // Create small direction markers (N, E, S, W)
+    const directions = [
+        { label: "N", position: new THREE.Vector3(0, 0, -citySize * 0.7), color: 0x66ccff },
+        { label: "E", position: new THREE.Vector3(citySize * 0.7, 0, 0), color: 0xffffff },
+        { label: "S", position: new THREE.Vector3(0, 0, citySize * 0.7), color: 0xffffff },
+        { label: "W", position: new THREE.Vector3(-citySize * 0.7, 0, 0), color: 0xffffff }
+    ];
     
-    // Update player marker position
-    playerMarker.position.x = missile.position.x;
-    playerMarker.position.z = missile.position.z;
+    directions.forEach(dir => {
+        // Create a canvas for the text
+        const canvas = document.createElement('canvas');
+        canvas.width = 32;
+        canvas.height = 32;
+        const ctx = canvas.getContext('2d');
+        
+        // Draw the text
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.font = 'bold 20px Arial';
+        ctx.fillStyle = `#${dir.color.toString(16).padStart(6, '0')}`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(dir.label, canvas.width/2, canvas.height/2);
+        
+        // Create texture and sprite
+        const texture = new THREE.CanvasTexture(canvas);
+        const material = new THREE.SpriteMaterial({ map: texture });
+        const sprite = new THREE.Sprite(material);
+        sprite.position.copy(dir.position);
+        sprite.position.y = 2; // Slightly above ground
+        sprite.scale.set(10, 10, 1);
+        
+        minimapScene.add(sprite);
+    });
+}
+
+
+// New function to update enemy missile markers on the minimap
+function updateEnemyMinimapMarkers() {
+    // Make sure we have the array initialized
+    if (!window.enemyMinimapMarkers) {
+        window.enemyMinimapMarkers = [];
+    }
     
-    // Calculate angle for minimap rotation (based on missile direction)
-    let angle = Math.atan2(missileDirection.x, missileDirection.z);
-    minimapContainer.style.transform = `rotate(${angle}rad)`;
+    // Remove any excess markers
+    while (window.enemyMinimapMarkers.length > enemyMissiles.length) {
+        const marker = window.enemyMinimapMarkers.pop();
+        minimapScene.remove(marker);
+        disposeObject(marker);
+    }
     
-    // Update and render
-    updateMinimapBuildings();
-    minimapRenderer.render(minimapScene, minimapCamera);
+    // Create triangle shape for enemies once
+    if (!window.enemyTriangleGeometry) {
+        const enemyTriangleShape = new THREE.Shape();
+        const enemyMarkerSize = 8; // Slightly smaller than player
+        enemyTriangleShape.moveTo(0, -enemyMarkerSize);
+        enemyTriangleShape.lineTo(-enemyMarkerSize * 0.6, enemyMarkerSize * 0.5);
+        enemyTriangleShape.lineTo(enemyMarkerSize * 0.6, enemyMarkerSize * 0.5);
+        enemyTriangleShape.lineTo(0, -enemyMarkerSize);
+        
+        window.enemyTriangleGeometry = new THREE.ShapeGeometry(enemyTriangleShape);
+    }
+    
+    // Create new markers or update existing ones
+    for (let i = 0; i < enemyMissiles.length; i++) {
+        const enemyMissile = enemyMissiles[i];
+        let marker = window.enemyMinimapMarkers[i];
+        
+        // Create new marker if needed
+        if (!marker) {
+            // Try to get color from missile's userData
+            let markerColor;
+            if (enemyMissile.userData && enemyMissile.userData.pilotId) {
+                // Find the pilot's color
+                const pilot = enemyPilotStats.find(p => p.id === enemyMissile.userData.pilotId);
+                if (pilot && pilot.color) {
+                    markerColor = new THREE.Color(pilot.color);
+                } else {
+                    // Fallback color
+                    markerColor = new THREE.Color(0x66ccff);
+                }
+            } else {
+                // Fallback color
+                markerColor = new THREE.Color(0x66ccff);
+            }
+            
+            const markerMaterial = new THREE.MeshBasicMaterial({
+                color: markerColor,
+                side: THREE.DoubleSide
+            });
+            
+            marker = new THREE.Mesh(window.enemyTriangleGeometry, markerMaterial);
+            marker.rotation.x = Math.PI / 2; // Start flat on the XZ plane
+            marker.position.y = 1.5; // Slightly lower than player marker
+            
+            minimapScene.add(marker);
+            window.enemyMinimapMarkers.push(marker);
+        }
+        
+        // Update marker position
+        marker.position.x = enemyMissile.position.x;
+        marker.position.z = enemyMissile.position.z;
+        
+        // Update direction - use enemy missile direction
+        if (enemyMissile.userData && enemyMissile.userData.direction) {
+            const dir = enemyMissile.userData.direction;
+            const angle = Math.atan2(dir.x, -dir.z);
+            marker.rotation.set(Math.PI / 2, 0, angle);
+        }
+    }
 }
 
     // Convert missile direction to cardinal direction (N, NE, E, etc.)
@@ -1771,6 +2185,64 @@ function getCardinalDirection(direction) {
     
     return "N/A"; // Fallback
 }
+
+function createParticleBatch(count, position, options = {}) {
+    // Default options
+    const settings = {
+        size: options.size || 1.0,
+        lifespan: options.lifespan || 3.0,
+        color: options.color || 0xffffff,
+        spread: options.spread || 5.0,
+        texture: options.texture || null
+    };
+    
+    // Create geometry for all particles at once
+    const geometry = new THREE.PlaneGeometry(1, 1);
+    
+    // Create material with shared texture
+    const material = new THREE.MeshBasicMaterial({
+        map: settings.texture,
+        transparent: true,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        color: new THREE.Color(settings.color)
+    });
+    
+    // Create the instanced mesh with proper arguments
+    const instancedMesh = new THREE.InstancedMesh(geometry, material, count);
+    
+    // Position and scale each instance
+    for (let i = 0; i < count; i++) {
+        const matrix = new THREE.Matrix4();
+        
+        // Random position within spread
+        const x = position.x + (Math.random() * 2 - 1) * settings.spread;
+        const y = position.y + (Math.random() * 2 - 1) * settings.spread;
+        const z = position.z + (Math.random() * 2 - 1) * settings.spread;
+        
+        // Random scale variation
+        const scale = settings.size * (0.7 + Math.random() * 0.6);
+        
+        // Apply transform
+        matrix.makeScale(scale, scale, scale);
+        matrix.setPosition(x, y, z);
+        
+        instancedMesh.setMatrixAt(i, matrix);
+    }
+    
+    instancedMesh.instanceMatrix.needsUpdate = true;
+    scene.add(instancedMesh);
+    
+    // Track batch
+    particleBatches.push({
+        mesh: instancedMesh,
+        birthTime: performance.now(),
+        lifespan: settings.lifespan
+    });
+    
+    return instancedMesh;
+}
+
 
 function createPortalRings() {
     // Portal ring properties
@@ -1896,6 +2368,7 @@ function createPortalRings() {
     });
 
 }
+    
 
 function createPortalLabel(portal, mainText, subText) {
     // Create canvas for text
@@ -1998,8 +2471,7 @@ function checkPortalCollisions() {
                 if (distInRing < portal.geometry.parameters.radius - 5) {
                     console.log(`Entered ${portal.userData.destination} portal in ${portal.userData.direction} direction!`);
                     
-                    // Create transition effect
-                    createPortalTransitionEffect(portal);
+                   
                     
                     // Navigate to destination
                     navigateToPortalDestination(portal);
@@ -2013,26 +2485,7 @@ function checkPortalCollisions() {
     return false;
 }
 
-// Create visual effect for portal transition
-function createPortalTransitionEffect(portal) {
-    const flash = document.createElement('div');
-    flash.style.position = 'fixed';
-    flash.style.top = '0';
-    flash.style.left = '0';
-    flash.style.width = '100%';
-    flash.style.height = '100%';
-    flash.style.backgroundColor = portal.userData.destination === 'next' ? '#00ff77' : '#3366ff';
-    flash.style.opacity = '0';
-    flash.style.transition = 'opacity 0.8s';
-    flash.style.pointerEvents = 'none';
-    flash.style.zIndex = '1000';
-    document.body.appendChild(flash);
-    
-    // Fade in
-    setTimeout(() => {
-        flash.style.opacity = '0.6';
-    }, 10);
-}
+
 
 // Navigate to portal destination
 function navigateToPortalDestination(portal) {
@@ -2062,9 +2515,7 @@ function navigateToPortalDestination(portal) {
         ? `${destinationUrl}&${params.toString()}`
         : `${destinationUrl}?${params.toString()}`;
 
-        // Create visual effect for transition
-    createPortalTransitionEffect(portal);
-    
+      
     // Pause the game
     gameActive = false;
     
@@ -2104,16 +2555,14 @@ function handleIncomingPortal() {
         if (urlParams.get('speed')) {
             const incomingSpeed = parseFloat(urlParams.get('speed'));
             if (!isNaN(incomingSpeed)) {
-                // Map the incoming speed to our game's velocity scale
                 velocity = Math.max(baseVelocity, Math.min(maxVelocity, incomingSpeed / 20));
             }
         }
         
-         // Skip start menu, go directly to game
-         gameActive = true;
+        // Skip start menu, go directly to game
+        gameActive = true;
         
-        // Show welcome message
-        showPortalWelcomeMessage();
+       
     }
 }
 
@@ -2121,6 +2570,19 @@ function handleIncomingPortal() {
 function resetMissile() {
     // Reset crash flag
     handleCrash.inProgress = false;
+
+    if (camera) {
+        camera.up.set(0, 1, 0);
+    }
+    
+    // Safely reset reference frame
+    if (ensureCameraReferences()) {
+        camera.userData.verticalReferenceFrame = {
+            forward: new THREE.Vector3().copy(missileDirection).normalize(),
+            right: new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), missileDirection).normalize(),
+            up: new THREE.Vector3(0, 1, 0)
+        };
+    }
 
     // Choose random spawn point
     const spawnIndex = Math.floor(Math.random() * spawnPoints.length);
@@ -2150,6 +2612,15 @@ function resetMissile() {
     // Make sure it's not heading too much up or down
     missileDirection.y = 0;
     missileDirection.normalize();
+
+
+
+    // IMPORTANT: Calculate fixed minimap rotation ONCE - the angle needed to make 
+    // the player enter from the bottom of the minimap
+    // This is the angle between the initial direction and the "down" direction (0,0,1)
+    minimapFixedRotation = Math.atan2(missileDirection.x, -missileDirection.z);
+    
+    updateMinimap(); // Update minimap to show new position
     
     // Align missile with direction
     const missileRotation = new THREE.Quaternion().setFromUnitVectors(
@@ -2157,6 +2628,16 @@ function resetMissile() {
         missileDirection
     );
     missile.quaternion.copy(missileRotation);
+
+    // Reset camera's up vector to be level
+    camera.up.set(0, 1, 0);
+    
+    // Reset reference frame
+    camera.userData.verticalReferenceFrame = {
+        forward: new THREE.Vector3().copy(missileDirection).normalize(),
+        right: new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), missileDirection).normalize(),
+        up: new THREE.Vector3(0, 1, 0)
+    };
     
     // Reset velocity
     velocity = baseVelocity;
@@ -2171,119 +2652,163 @@ function resetMissile() {
     // The key is to let the smoothing system handle the transition naturally
 }
         
-        /*
-        function createFireAndSmoke() {
-        // Check if we're at the particle limit
-        if (smokeParticles.length > MAX_SMOKE_PARTICLES) {
-        // Remove oldest particles if we're at the limit
-        const removeCount = Math.min(20, smokeParticles.length - MAX_SMOKE_PARTICLES + 20);
-        for (let i = 0; i < removeCount; i++) {
-            const oldParticle = smokeParticles.shift(); // Remove oldest first
-            disposeObject(oldParticle);
-        }
+    /*    
+function createFireAndSmoke() {
+    // Check if we're at the particle limit
+    if (smokeParticles.length > MAX_SMOKE_PARTICLES * 0.9) return;
+    
+    // Create shared textures if they don't exist
+    if (!window.fireTexture) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 64;
+        canvas.height = 64;
+        const ctx = canvas.getContext('2d');
+        
+        // Create radial gradient for fire effect
+        const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+        gradient.addColorStop(0, 'rgba(255, 255, 180, 1.0)'); // Bright center
+        gradient.addColorStop(0.2, 'rgba(255, 160, 50, 0.9)'); // Orange middle
+        gradient.addColorStop(0.6, 'rgba(255, 60, 10, 0.5)'); // Red edge
+        gradient.addColorStop(1, 'rgba(255, 0, 0, 0)'); // Transparent edge
+        
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, 64, 64);
+        
+        window.fireTexture = new THREE.CanvasTexture(canvas);
     }
-
-    // Create particle group for fire
-    const fireCount = isAccelerating ? 6 : 2; // Less fire when not accelerating
-   
-    for (let i = 0; i < fireCount; i++) {
-        // More varied sizes for fire
-        const fireSize = isAccelerating ? 
-            THREE.MathUtils.randFloat(1.0, 2.0) : 
-            THREE.MathUtils.randFloat(0.6, 1.2);
+    
+    // Reuse geometry for all fire particles
+    if (!window.fireGeometry) {
+        window.fireGeometry = new THREE.PlaneGeometry(1, 1);
+    }
+    
+    // Create minimal number of particles based on acceleration
+    const fireCount = isAccelerating ? 3 : 1;
+    const smokeCount = isAccelerating ? 0 : 1; // Less smoke when accelerating
+    
+    // Timer-based checks like enemy missiles
+    if (!window.lastFireCreationTime) window.lastFireCreationTime = 0;
+    const now = Date.now();
+    const timeSinceLastFire = (now - window.lastFireCreationTime) / 1000;
+    const fireInterval = isAccelerating ? 0.03 : 0.08;
+    
+    // Only create fire on intervals
+    if (timeSinceLastFire >= fireInterval) {
+        window.lastFireCreationTime = now;
         
-        // Create more complex fire meshes (sphere + light)
-        const fireGeometry = new THREE.SphereGeometry(fireSize, 8, 8);
-        
-        // More vibrant colors for fire
-        const colorRandom = Math.random();
-        const fireColor = colorRandom < 0.3 ? 
-            0xffff00 : // Yellow
-            (colorRandom < 0.7 ? 0xff5500 : 0xff2200); // Orange or Red
-        
-        const fireMaterial = new THREE.MeshBasicMaterial({
-            color: fireColor,
-            transparent: true,
-            opacity: THREE.MathUtils.randFloat(0.7, 1.0) // Higher opacity
-        });
-        
-        const fire = new THREE.Mesh(fireGeometry, fireMaterial);
-        
-        // Position fire behind missile with more variance for accelerating
-        const missileBackVector = missileDirection.clone().negate();
-        const backDistance = isAccelerating ? 
-            THREE.MathUtils.randFloat(3, 7) : 
-            THREE.MathUtils.randFloat(2, 5);
-        
-        fire.position.copy(missile.position)
-            .add(missileBackVector.clone().multiplyScalar(backDistance))
-            .add(new THREE.Vector3(
-                THREE.MathUtils.randFloatSpread(isAccelerating ? 1.0 : 0.5),
-                THREE.MathUtils.randFloatSpread(isAccelerating ? 1.0 : 0.5),
-                THREE.MathUtils.randFloatSpread(isAccelerating ? 1.0 : 0.5)
-            ));
-        
-        // Add point light for glow effect on largest particles
-        if (fireSize > 1.5 && isAccelerating) {
-            const fireLight = new THREE.PointLight(fireColor, 2, 8);
-            fireLight.position.copy(fire.position);
-            scene.add(fireLight);
+        // Create fire particles
+        for (let i = 0; i < fireCount; i++) {
+            const fireSize = isAccelerating ? 
+                THREE.MathUtils.randFloat(1.0, 2.0) : 
+                THREE.MathUtils.randFloat(0.6, 1.2);
             
-            // Store light in fire's userData
-            fire.userData.light = fireLight;
+            // Reuse material from pool if possible
+            let fireMaterial;
+            const colorRandom = Math.random();
+            const fireColor = colorRandom < 0.3 ? 
+                0xffff00 : (colorRandom < 0.7 ? 0xff5500 : 0xff2200);
+                
+            if (!window.fireMaterialPool) window.fireMaterialPool = [];
+            
+            if (window.fireMaterialPool.length > 0) {
+                fireMaterial = window.fireMaterialPool.pop();
+                fireMaterial.color.setHex(fireColor);
+                fireMaterial.opacity = THREE.MathUtils.randFloat(0.7, 1.0);
+            } else {
+                fireMaterial = new THREE.MeshBasicMaterial({
+                    map: window.fireTexture,
+                    color: fireColor,
+                    transparent: true,
+                    blending: THREE.AdditiveBlending,
+                    opacity: THREE.MathUtils.randFloat(0.7, 1.0),
+                    depthWrite: false,
+                    side: THREE.DoubleSide
+                });
+            }
+            
+            const fire = new THREE.Mesh(window.fireGeometry, fireMaterial);
+            fire.scale.set(fireSize, fireSize, 1);
+            
+            // Position fire behind missile
+            const missileBackVector = missileDirection.clone().negate();
+            const backDistance = isAccelerating ? 
+                THREE.MathUtils.randFloat(3, 6) : 
+                THREE.MathUtils.randFloat(2, 4);
+            
+            fire.position.copy(missile.position)
+                .add(missileBackVector.clone().multiplyScalar(backDistance))
+                .add(new THREE.Vector3(
+                    THREE.MathUtils.randFloatSpread(isAccelerating ? 0.8 : 0.4),
+                    THREE.MathUtils.randFloatSpread(isAccelerating ? 0.8 : 0.4),
+                    THREE.MathUtils.randFloatSpread(isAccelerating ? 0.8 : 0.4)
+                ));
+            
+            // Add fire behavior with better memory management
+            fire.userData = {
+                life: THREE.MathUtils.randFloat(0.2, 0.5), // Shorter life for better performance
+                maxLife: THREE.MathUtils.randFloat(0.2, 0.5),
+                velocity: missileBackVector.clone().multiplyScalar(
+                    isAccelerating ? 
+                    THREE.MathUtils.randFloat(0.2, 0.4) : 
+                    THREE.MathUtils.randFloat(0.1, 0.2)
+                ),
+                isBillboard: true,
+                onRemove: function(material) {
+                    // Return material to pool when particle is removed
+                    if (window.fireMaterialPool.length < 20) { // Limit pool size
+                        window.fireMaterialPool.push(material);
+                    }
+                }
+            };
+            
+            scene.add(fire);
+            smokeParticles.push(fire);
         }
-        
-        // Fire behavior
-        fire.userData = {
-            life: THREE.MathUtils.randFloat(0.3, 0.7),
-            maxLife: THREE.MathUtils.randFloat(0.3, 0.7),
-            velocity: missileBackVector.clone().multiplyScalar(
-                isAccelerating ? 
-                THREE.MathUtils.randFloat(0.2, 0.5) : 
-                THREE.MathUtils.randFloat(0.1, 0.3)
-            )
-        };
-        
-        scene.add(fire);
-        smokeParticles.push(fire);
     }
-
     
+    // Only create smoke on intervals (less frequent than fire)
+    if (!window.lastSmokeCreationTime) window.lastSmokeCreationTime = 0;
+    const timeSinceLastSmoke = (now - window.lastSmokeCreationTime) / 1000;
+    const smokeInterval = 0.12; // Less frequent smoke creation
     
-    // Create smoke particles
-    if (!isAccelerating || Math.random() > 0.3) {
-        const smokeCount = isAccelerating ? 1 : 2; // More smoke when not accelerating
+    if (smokeCount > 0 && timeSinceLastSmoke >= smokeInterval) {
+        window.lastSmokeCreationTime = now;
         
+        // Create smoke particles (reuse common textures)
         for (let i = 0; i < smokeCount; i++) {
-            const smokeGeometry = new THREE.SphereGeometry(0.3, 8, 8);
+            const smokeGeometry = new THREE.PlaneGeometry(1, 1);
             const smokeMaterial = new THREE.MeshBasicMaterial({
-                color: 0x888888,
+                map: window.smokeTexture || window.billowyTexture || null, // Reuse textures
                 transparent: true,
-                opacity: 0.4
+                opacity: 0.3,
+                depthWrite: false,
+                side: THREE.DoubleSide
             });
             
             const smoke = new THREE.Mesh(smokeGeometry, smokeMaterial);
+            const smokeSize = THREE.MathUtils.randFloat(1.2, 1.8);
+            smoke.scale.set(smokeSize, smokeSize, 1);
         
             // Position smoke behind missile 
             const missileBackVector = missileDirection.clone().negate();
             smoke.position.copy(missile.position)
-                .add(missileBackVector.multiplyScalar(6))
+                .add(missileBackVector.clone().multiplyScalar(5))
                 .add(new THREE.Vector3(
-                    THREE.MathUtils.randFloatSpread(1), 
-                    THREE.MathUtils.randFloatSpread(1), 
-                    THREE.MathUtils.randFloatSpread(1)  
+                    THREE.MathUtils.randFloatSpread(0.8), 
+                    THREE.MathUtils.randFloatSpread(0.8), 
+                    THREE.MathUtils.randFloatSpread(0.8)  
                 ));
                     
-            // Corrected from 'fire' to 'smoke'
             smoke.userData = {
-                life: 1.0,
-                maxLife: 1.0,
-                growRate: THREE.MathUtils.randFloat(1.02, 1.05),
+                life: 0.8,
+                maxLife: 0.8,
+                growRate: THREE.MathUtils.randFloat(1.02, 1.04),
                 velocity: new THREE.Vector3(
-                    THREE.MathUtils.randFloatSpread(0.1),
-                    THREE.MathUtils.randFloat(0.05, 0.2),
-                    THREE.MathUtils.randFloatSpread(0.1)
-                )
+                    THREE.MathUtils.randFloatSpread(0.1) + globalWindDirection.x * 0.2,
+                    THREE.MathUtils.randFloat(0.05, 0.2) + globalWindDirection.y * 0.2,
+                    THREE.MathUtils.randFloatSpread(0.1) + globalWindDirection.z * 0.2
+                ),
+                isBillboard: true
             };
                 
             scene.add(smoke);
@@ -2291,7 +2816,10 @@ function resetMissile() {
         }
     }
 }
-    */
+  */  
+
+   
+
 
     function initEnemyExplosionMaterials() {
     // Instead of creating different materials, we'll use the same shader materials
@@ -2843,17 +3371,108 @@ function createBillowingSmoke(position) {
     scene.add(smoke);
     smokeParticles.push(smoke);
 }
+
+function updateDamagedBuildingsSmoke() {
+    // Process each damaged building
+    for (let i = 0; i < damagedBuildings.length; i++) {
+        const building = damagedBuildings[i];
+        
+        // Skip if building no longer exists or isn't in the scene
+        if (!building || !building.parent) {
+            damagedBuildings.splice(i, 1);
+            i--;
+            continue;
+        }
+        
+        // Only emit smoke occasionally for performance reasons
+        if (Math.random() < 0.1 * building.userData.damageLevel) {
+            // Create smoke based on damage level
+            const smokeSource = new THREE.Vector3(
+                building.position.x + THREE.MathUtils.randFloatSpread(building.userData.width * 0.5),
+                building.position.y + building.userData.height * 0.7,
+                building.position.z + THREE.MathUtils.randFloatSpread(building.userData.width * 0.5)
+            );
+            
+            // Create billowing smoke
+            createDamagedBuildingSmoke(smokeSource, building.userData.damageLevel);
+        }
+    }
+}
+
+function createDamagedBuildingSmoke(position, damageLevel) {
+    // Skip if we're at particle limit
+    if (smokeParticles.length > MAX_SMOKE_PARTICLES * 0.9) return;
+    
+    // Create smoke with size based on damage
+    const smokeSize = THREE.MathUtils.randFloat(2.0, 4.0) * Math.sqrt(damageLevel);
+    const smokeGeometry = new THREE.PlaneGeometry(1, 1);
+    
+    // Reuse the scorchSmokeTexture or billowyTexture if available
+    const smokeTexture = window.scorchSmokeTexture || window.billowyTexture;
+    
+    const smokeMaterial = new THREE.MeshBasicMaterial({
+        map: smokeTexture,
+        transparent: true,
+        depthWrite: false,
+        opacity: THREE.MathUtils.randFloat(0.4, 0.7) * damageLevel,
+        side: THREE.DoubleSide
+    });
+    
+    const smoke = new THREE.Mesh(smokeGeometry, smokeMaterial);
+    smoke.scale.set(smokeSize, smokeSize, 1);
+    smoke.position.copy(position);
+    
+    // Add upward velocity with some randomness
+    const velocity = new THREE.Vector3(
+        THREE.MathUtils.randFloatSpread(0.3) + globalWindDirection.x,
+        THREE.MathUtils.randFloat(1.0, 2.0),
+        THREE.MathUtils.randFloatSpread(0.3) + globalWindDirection.z
+    );
+    
+    // Make smoke last longer based on damage level
+    smoke.userData = {
+        life: THREE.MathUtils.randFloat(1.5, 3.0) * damageLevel,
+        maxLife: THREE.MathUtils.randFloat(1.5, 3.0) * damageLevel,
+        growRate: THREE.MathUtils.randFloat(1.01, 1.02),
+        velocity: velocity,
+        isBillboard: true,
+        source: 'building',
+        rotationSpeed: new THREE.Vector3(0, 0, THREE.MathUtils.randFloatSpread(0.1))
+    };
+    
+    scene.add(smoke);
+    smokeParticles.push(smoke);
+}
+
+function addBuildingDamage(building) {
+    // Skip if it's already in the damaged buildings list
+    if (damagedBuildings.includes(building)) {
+        // Just increase damage level if already damaged
+        building.userData.damageLevel = Math.min(1.0, building.userData.damageLevel + 0.3);
+        return;
+    }
+    
+    // Initialize damage level
+    building.userData.damageLevel = 0.5;
+    
+    // Add to damaged buildings array
+    damagedBuildings.push(building);
+    
+    // Optionally, darken the building to show damage
+    if (building.material) {
+        building.material.color.multiplyScalar(0.7);
+    }
+}
         
 
 function updateScorchMarks(delta) {
-    // Only process smoke generation on a global timer
-    globalSmokeTimer -= delta;
+    smokeTimer += delta;
     
-    // Skip processing if timer hasn't expired or no marks exist
-    if (globalSmokeTimer > 0 || scorchMarks.length === 0) return;
+    // Only process smoke generation on a timer
+    if (smokeTimer < globalSmokeInterval || scorchMarks.length === 0) return;
     
-    // Reset timer when it expires
-    globalSmokeTimer = globalSmokeInterval;
+    // Reset timer
+    smokeTimer = 0;
     
     // Update wind direction occasionally
     if (Math.random() < 0.1) {
@@ -2951,11 +3570,18 @@ function createDramaticScorchSmoke(scorch, isLarge = false) {
         
         window.scorchSmokeTexture = new THREE.CanvasTexture(canvas);
     }
+
+     // Get the scorch mark scale to determine smoke size
+     const scorchScale = scorch.scale.x || 1.0;
     
     // Create billboarded plane for smoke
-    const smokeSize = isLarge ? 
-        THREE.MathUtils.randFloat(2.0, 3.5) : 
-        THREE.MathUtils.randFloat(1.0, 2.0);
+    const baseSize = isLarge ? 
+        THREE.MathUtils.randFloat(6.0, 9.0) : 
+        THREE.MathUtils.randFloat(3.0, 6.0);
+
+        // scale smoke size based on scorch size
+        const scaleFactor = Math.pow(scorchScale / 8.0, 0.8); // Use power function for better scaling
+    const smokeSize = baseSize * Math.max(1.0, scaleFactor);
         
     const smokeGeometry = new THREE.PlaneGeometry(1, 1);
     const smokeMaterial = new THREE.MeshBasicMaterial({
@@ -2970,26 +3596,32 @@ function createDramaticScorchSmoke(scorch, isLarge = false) {
     smoke.scale.set(smokeSize, smokeSize, 1);
     
     // Position smoke with variation
+    const positionVariance = Math.min(2.5 * scaleFactor, 6.0);
+    const heightVariance = Math.min(2.5 * scaleFactor, 6.0);
+
     const scorchPos = scorch.position.clone();
     smoke.position.copy(scorchPos).add(
         new THREE.Vector3(
             THREE.MathUtils.randFloatSpread(1.5),
-            THREE.MathUtils.randFloat(0.5, isLarge ? 2.5 : 1.5),
+            THREE.MathUtils.randFloat(0.5, isLarge ? 4.0 : 2.0),
             THREE.MathUtils.randFloatSpread(1.5)
         )
     );
     
     // Billboard to face camera
     smoke.userData.isBillboard = true;
+
+    // Smoke behavior - make large smoke last longer
+    const lifeMultiplier = scorch.userData.isTargetHit ? 1.5 : 1.0;
     
     // Smoke behavior
     smoke.userData = {
         life: isLarge ? THREE.MathUtils.randFloat(3, 5) : THREE.MathUtils.randFloat(2, 3),
         maxLife: isLarge ? THREE.MathUtils.randFloat(3, 5) : THREE.MathUtils.randFloat(2, 3),
-        growRate: THREE.MathUtils.randFloat(1.005, 1.012),
+        growRate: THREE.MathUtils.randFloat(1.005, 1.015),
         velocity: new THREE.Vector3(
             globalWindDirection.x + THREE.MathUtils.randFloatSpread(0.2),
-            THREE.MathUtils.randFloat(isLarge ? 1.0 : 0.5, isLarge ? 1.8 : 1.0),
+            THREE.MathUtils.randFloat(isLarge ? 1.0 : 0.5, isLarge ? 2.5 : 1.5),
             globalWindDirection.z + THREE.MathUtils.randFloatSpread(0.2)
         ),
         rotationSpeed: new THREE.Vector3(0, 0, THREE.MathUtils.randFloatSpread(0.1)),
@@ -3037,38 +3669,30 @@ function createBillboardSmoke() {
 }
 
 // Create a single timer to update all scorch marks
-function startGlobalScorchTimer() {
-    globalScorchTimer = setInterval(() => {
-        // If no scorch marks, stop the timer
-        if (scorchMarks.length === 0) {
-            clearInterval(globalScorchTimer);
-            globalScorchTimer = null;
-            return;
+function updateScorchEffects() {
+    // Skip if no scorch marks
+    if (scorchMarks.length === 0) return;
+    
+    for (let i = scorchMarks.length - 1; i >= 0; i--) {
+        const scorch = scorchMarks[i];
+        const embers = scorch.userData.emberEffect;
+        if (!embers) continue;
+        
+        const age = (Date.now() - scorch.userData.creationTime);
+        
+        // Remove if too old
+        if (age > scorch.userData.flickerDuration) {
+            embers.material.opacity = 0;
+            continue;
         }
         
-        // Update all scorch marks
-        for (let i = scorchMarks.length - 1; i >= 0; i--) {
-            const scorch = scorchMarks[i];
-            const embers = scorch.userData.emberEffect;
-            if (!embers) continue;
-            
-            const age = (Date.now() - scorch.userData.creationTime);
-            
-            // Remove if too old
-            if (age > scorch.userData.flickerDuration) {
-                embers.material.opacity = 0;
-                // Don't remove here, let the cleanup function handle removal
-                continue;
-            }
-            
-            // Random flickering
-            const flickerIntensity = Math.random() * 0.3 + 0.2;
-            
-            // Fade out over time
-            const agePercent = age / scorch.userData.flickerDuration;
-            embers.material.opacity = flickerIntensity * (1 - agePercent);
-        }
-    }, globalScorchInterval);
+        // Random flickering
+        const flickerIntensity = Math.random() * 0.3 + 0.2;
+        
+        // Fade out over time
+        const agePercent = age / scorch.userData.flickerDuration;
+        embers.material.opacity = flickerIntensity * (1 - agePercent);
+    }
 }
 
 // Create smoldering particle effect
@@ -3343,8 +3967,7 @@ function updateParticles(delta) {
                     const baseScale = particle.userData.initialScale * (lifeRatio * 0.8 + 0.2);
                     particle.scale.set(
                         baseScale * stretchFactor,
-                        baseScale,
-                        1
+                        baseScale
                     );
                     
                     // Align with velocity direction
@@ -3363,8 +3986,7 @@ function updateParticles(delta) {
             else if (particle.userData.isWave) {
                 // Wave particles expand outward
                 if (particle.userData.growRate) {
-                    particle.scale.multiplyScalar(particle.userData.growRate * 
-                        (0.95 + 0.1 * Math.cos(Date.now() * 0.01))); // Slight pulsing
+                    particle.scale.multiplyScalar(particle.userData.growRate * (0.95 + 0.1 * Math.cos(Date.now() * 0.01))); // Slight pulsing
                 }
                 
                 // Update color and opacity
@@ -3392,17 +4014,72 @@ function updateParticles(delta) {
 }
     
         
-        function updateHUD() {
-            if (!gameActive) return;
+function updateHUD() {
+    if (!gameActive) return;
     
-    // Update only the required elements
-    document.getElementById('direction').textContent = getCardinalDirection(missileDirection);
-    document.getElementById('altitude').textContent = Math.round(missile.position.y);
-    document.getElementById('speed').textContent = Math.round(velocity * 100); // Scale for display
+    // REMOVED: Compass angle calculation and rotation
+    
+    // Update altitude - increased range to 800m (from 400m)
+    const altitude = Math.round(missile.position.y);
+    const altitudePercent = Math.min(100, (altitude / 800) * 100);
+    const altitudeBar = document.getElementById('altitude-bar');
+    const altitudeValue = document.getElementById('altitude');
+    
+    if (altitudeBar && altitudeValue) {
+        altitudeBar.style.height = `${altitudePercent}%`;
+        altitudeValue.textContent = altitude;
+        
+        // Color based on altitude - red at low altitudes, yellow in middle, green when high
+        let altitudeColor;
+        if (altitude < 50) {
+            // Danger zone - red
+            altitudeColor = '#ff3333';
+        } else if (altitude < 100) {
+            // Warning zone - yellow
+            altitudeColor = '#ffcc00';
+        } else {
+            // Safe zone - green
+            altitudeColor = '#33cc33';
+        }
+        
+        altitudeBar.style.backgroundColor = altitudeColor;
+        altitudeValue.style.color = altitudeColor;
+    }
+    
+    // Update speed - with color change based on speed
+    const speed = Math.round(velocity * 100);
+    const speedPercent = Math.min(100, (velocity / (maxVelocity * 0.5)) * 100);
+    const speedBar = document.getElementById('speed-bar');
+    const speedValue = document.getElementById('speed');
+    
+    if (speedBar && speedValue) {
+        speedBar.style.height = `${speedPercent}%`;
+        speedValue.textContent = speed;
+        
+        // Color based on speed - green at low speeds, yellow in middle, red at high speeds
+        let speedColor;
+        if (speedPercent > 80) {
+            // Danger zone - red
+            speedColor = '#ff3333';
+        } else if (speedPercent > 50) {
+            // Warning zone - yellow
+            speedColor = '#ffcc00';
+        } else {
+            // Safe zone - green
+            speedColor = '#33cc33';
+        }
+        
+        speedBar.style.backgroundColor = speedColor;
+        speedValue.style.color = speedColor;
+    }
 }
         
-        function checkCollisions() {
-            if (!gameActive || resetDelay > 0 || !missile.visible) return;
+    function checkCollisions() {
+        if (!gameActive || resetDelay > 0 || !missile.visible) return;
+
+        if (typeof handleCrash.inProgress !== 'undefined' && handleCrash.inProgress) {
+        handleCrash.inProgress = false;
+    }
     
     // Check portal collisions first
     if (checkPortalCollisions()) {
@@ -3520,6 +4197,7 @@ function updateParticles(delta) {
     if (building.userData.isTarget) {
         handleTargetHit(building, impactPoint); // Pass impact point
     } else {
+        addBuildingDamage(building);
         // handle the crash
         handleCrash(impactPoint, false);
     }
@@ -3528,138 +4206,121 @@ function updateParticles(delta) {
 }
 }  
         
-    function handleCrash(impactPoint, createGroundScorch = true) {
-        // Add static flag to prevent multiple calls
-    if (handleCrash.inProgress) return;
-    handleCrash.inProgress = true;
+function handleCrash(impactPoint, createGroundScorch = true) {
+    // Static flag implementation is causing the problem
+    // Let's replace it with a more reliable approach
+    
+    // Only process if the missile is visible and resetDelay isn't active
+    if (!missile.visible || resetDelay > 0) return;
 
     createExplosion(impactPoint || missile.position.clone(), true, createGroundScorch);
-        playSound('crash');
-        stopFlightSounds();
-        stats.crashes++;
-          finishFlight();
+    playSound('crash');
+    stopFlightSounds();
+    stats.crashes++;
+    finishFlight();
     
-          // Set camera target and delay
-          cameraTarget = missile.position.clone();
-           resetDelay = 2.0; // Wait 2 seconds before resetting
+    // Set camera target and delay
+    cameraTarget = missile.position.clone();
+    resetDelay = 2.0; // Wait 2 seconds before resetting
     
-          // Hide missile
-           missile.visible = false;
-
-           // Reset the flag after reset delay
-        setTimeout(() => { 
-        handleCrash.inProgress = false;
-    }, 2100);
-        }
+    // Hide missile
+    missile.visible = false;
+}
         
         function handleTargetHit(target, impactPoint) {
-            // Ensure this is actually a target building
-        if (!target || !target.userData || !target.userData.isTarget) {
+    // Ensure this is actually a target building
+    if (!target || !target.userData || !target.userData.isTarget) {
         handleCrash(impactPoint, false); // Treat as a normal crash instead
         return;
-         }
-            createExplosion(impactPoint || target.position.clone(), true, false);
-            playSound('target');
-            stopFlightSounds();
-
-            // Store target position before removal for ground scorch
-            const targetPosition = target.position.clone();
-            const buildingWidth = target.userData.width;
-            
-             // Set camera target and delay
-            cameraTarget = targetPosition;
-            resetDelay = 2.0; // Wait 2 seconds before resetting
+    }
     
-              // Hide missile
-             missile.visible = false;
-            
-             // Find surrounding buildings that should be damaged by the explosion
-        buildings.forEach(building => {
-           if (building !== target && 
-        building.position.distanceTo(targetPosition) < 30 && 
-        !damagedBuildings.includes(building)) {
-        
-        // Add to damaged buildings list so they emit smoke
-        damagedBuildings.push(building);
-        
-        // Initial smoke burst
-             for (let i = 0; i < 3; i++) { // Reduced from 5 to 3
-            createBuildingSmoke(building);
-            }
-            }
-          });
-                      
-            // Remove target from scene and arrays
-            scene.remove(target);
-            const targetIndex = buildings.indexOf(target);
-            if (targetIndex > -1) {
-                buildings.splice(targetIndex, 1);
-            }
-            
-            const targetBuildingIndex = targetBuildings.indexOf(target);
-            if (targetBuildingIndex > -1) {
-                targetBuildings.splice(targetBuildingIndex, 1);
-            }
+    createExplosion(impactPoint || target.position.clone(), true, false);
+    playSound('target');
+    stopFlightSounds();
 
-            // Create scorch mark on ground
-            const scorchPosition = new THREE.Vector3(targetPosition.x, -0.3, targetPosition.z);
-            createScorchMark(scorchPosition, false); // false = on ground, not building
-            // Make it slightly larger than normal 
-            const lastScorch = scorchMarks[scorchMarks.length - 1];
-            if (lastScorch) {
-        const scorchSize = buildingWidth * 1.2; // Slightly bigger than building base
-        lastScorch.scale.set(scorchSize, scorchSize, 1); // No more division by 8
+    // Store target position before removal for ground scorch
+    const targetPosition = target.position.clone();
+    const buildingWidth = target.userData.width;
+    
+    // Set camera target and delay
+    cameraTarget = targetPosition;
+    resetDelay = 2.0; // Wait 2 seconds before resetting
+    
+    // Hide missile
+    missile.visible = false;
+    
+    // Remove target from scene and arrays
+    scene.remove(target);
+    const targetIndex = buildings.indexOf(target);
+    if (targetIndex > -1) {
+        buildings.splice(targetIndex, 1);
+    }
+    
+    const targetBuildingIndex = targetBuildings.indexOf(target);
+    if (targetBuildingIndex > -1) {
+        targetBuildings.splice(targetBuildingIndex, 1);
+    }
+
+    // Create scorch mark on ground
+    const scorchPosition = new THREE.Vector3(targetPosition.x, -0.3, targetPosition.z);
+    createScorchMark(scorchPosition, false);
+    
+    // Make it slightly larger than normal 
+    const lastScorch = scorchMarks[scorchMarks.length - 1];
+    if (lastScorch) {
+        const scorchSize = buildingWidth * 1.2;
+        lastScorch.scale.set(scorchSize, scorchSize, 1);
         
         if (lastScorch.userData.emberEffect) {
             lastScorch.userData.emberEffect.scale.set(scorchSize * 0.8, scorchSize * 0.8, 1);
         }
-              // Make this scorch produce more smoke
-            lastScorch.userData.smokeIntensity = 1.5;
-             }
+        // Make this scorch produce more smoke
+        lastScorch.userData.smokeIntensity = 1.5;
+        lastScorch.userData.isTargetHit = true;
+    }
 
-             createSmokeColumn(scorchPosition, 20); // Create a 20-unit tall smoke column
+    createSmokeColumn(scorchPosition, 20);
 
-            // Update stats
-            stats.targetsDestroyed++;
-            stats.targetsRemaining--;
+    // Update stats
+    stats.targetsDestroyed++;
+    stats.targetsRemaining--;
 
-            // Update player stats
-            playerStats.targetsDestroyed++;
-
-            // Also update Firebase with the new achievement!
-            syncPlayerStatsToFirebase();
+    // Update player stats
+    playerStats.targetsDestroyed++;
+    updatePlayerStats(); // Calculate new TPM
     
-            // Update leaderboard immediately to show new TPM
-            updateLeaderboard();
+    // Also update Firebase with the new achievement!
+    syncPlayerStatsToFirebase();
     
-            // Add highlight effect to player entry
-              setTimeout(() => {
-           const playerEntry = document.getElementById(`player-${playerStats.id}`);
-              if (playerEntry) {
+    // Update leaderboard immediately to show new TPM
+    updateLeaderboard();
+    
+    // Add highlight effect to player entry
+    setTimeout(() => {
+        const playerEntry = document.getElementById(`player-${playerStats.id}`);
+        if (playerEntry) {
             playerEntry.classList.add('highlight');
-            // Remove class after animation completes
             setTimeout(() => playerEntry.classList.remove('highlight'), 1500);
-            }
-           }, 100);
-            
-            // Check if all targets are destroyed
-            if (stats.targetsRemaining <= 0) {
-        // Don't set resetDelay so we won't spawn a new missile
-        resetDelay = 0;
+        }
+    }, 100);
+    
+    // Check if all targets are destroyed
+    if (stats.targetsRemaining <= 0) {
+        // FIXED: Set a longer reset delay to prevent normal missile reset
+        resetDelay = 100.0; // Very long delay prevents normal reset
         
-        // We'll skip the normal reset process and just show the game over screen after a delay
+        // We'll skip the normal reset process and show the game over screen
         setTimeout(() => {
             showGameOver();
-        }, 3000); // 3 second delay
+        }, 3000);
         
         // We still need missile to be hidden
         missile.visible = false;
         return;
     }
-            
-            finishFlight();
-            
-        }
+    
+    finishFlight();
+}
 
     
     
@@ -3704,15 +4365,44 @@ function cleanupScorchMarks() {
         }
         
         function showGameOver() {
-    gameActive = false;
-    stopFlightSounds(); 
+    console.log("Showing game over screen!");
     
+    // Make sure the game is inactive during transition
+    gameActive = false;
+    stopFlightSounds();
+    
+    // Cancel any existing animation frame
     if (animationFrameId) {
         cancelAnimationFrame(animationFrameId);
         animationFrameId = null;
     }
     
-    // Show game over screen with "Mission Complete!" message only
+    // Determine the winner for this round
+    const winners = determineRoundWinner();
+    
+    // Get the text to display based on winner(s)
+    let winnerText = '';
+    if (!winners || winners.length === 0) {
+        winnerText = "Round Complete!<br><span class='subtitle'>No targets destroyed</span>";
+    } else if (winners.length === 1) {
+        // Single winner
+        const winner = winners[0];
+        const isPlayer = winner.id === playerStats.id;
+        
+        winnerText = `
+            <span style="color: ${winner.color}">${winner.name}</span> Wins!<br>
+            <span class='subtitle'>${isPlayer ? "You" : winner.name} destroyed ${winner.targetsDestroyed} targets</span>
+        `;
+    } else {
+        // Multiple winners (tie)
+        const winnerNames = winners.map(w => `<span style="color: ${w.color}">${w.name}</span>`).join(", ");
+        winnerText = `
+            Tie Game!<br>
+            <span class='subtitle'>${winnerNames} each destroyed ${winners[0].targetsDestroyed} targets</span>
+        `;
+    }
+    
+    // Show game over screen with winner information
     document.getElementById('gameOverScreen').style.display = 'block';
     document.getElementById('hud').style.display = 'none';
     document.getElementById('minimap').style.display = 'none';
@@ -3723,60 +4413,90 @@ function cleanupScorchMarks() {
         <div class="corner-decoration bottom-left"></div>
         <div class="corner-decoration bottom-right"></div>
         
-        <h2>Mission Complete!</h2>
+        <h2>${winnerText}</h2>
         <div class="mission-transition">Next mission starting...</div>
     `;
     
-    // Add animation style for mission transition text
+    // Add some CSS for the subtitle
     const style = document.createElement('style');
     style.textContent = `
-        .mission-transition {
-            font-size: 24px;
-            margin-top: 20px;
-            color: #66ccff;
-            animation: pulse 1.5s infinite;
-        }
-        
-        @keyframes pulse {
-            0% { opacity: 0.5; }
-            50% { opacity: 1.0; }
-            100% { opacity: 0.5; }
+        .subtitle {
+            font-size: 0.7em;
+            color: #aaaaaa;
         }
     `;
     document.head.appendChild(style);
     
-    // Automatically restart after 2 seconds - but without showing the second screen
+    // Clear any existing game over timeout
+    if (window.gameOverTimeout) {
+        clearTimeout(window.gameOverTimeout);
+    }
+    
+    // Automatically restart after 3 seconds
     window.gameOverTimeout = setTimeout(() => {
-        // Just restart the game directly
+        console.log("Starting new mission...");
         restartGame();
-    }, 2000); // Keep the 2 second delay
+    }, 3000);
 }
         
 
         
 // Update the restartGame function to preserve camera transition
 function restartGame() {
-    // Clear any existing timeouts to prevent multiple game starts
+    console.log("Restarting game...");
+    
+    // Clear any existing timeouts
     if (window.gameOverTimeout) {
         clearTimeout(window.gameOverTimeout);
         window.gameOverTimeout = null;
     }
 
-    // Don't reset these values - preserves camera position during transition
-    // resetDelay = 0;
-    // cameraTarget = null;
+    // Reset player stats for the new round (keep roundsWon)
+    playerStats.targetsDestroyed = 0;
+    playerStats.crashes = 0;
+    
+    // Reset enemy pilot stats for the new round (keep roundsWon)
+    enemyPilotStats.forEach(pilot => {
+        pilot.targetsDestroyed = 0;
+        pilot.crashes = 0;
+    });
 
+    // Hide game over screen, show HUD and minimap
     document.getElementById('gameOverScreen').style.display = 'none';
     document.getElementById('hud').style.display = 'block';
     document.getElementById('minimap').style.display = 'block';
-    createHudElements(); // Create HUD elements again
+    createHudElements(); // Recreate HUD elements
     
-    // Reset game state
+    // Reset game state variables
+    resetDelay = 0; // IMPORTANT: Reset the delay counter
+    cameraTarget = null; // Clear any camera target
+    
     stats.targetsRemaining = 0;
     stats.targetsDestroyed = 0;
     stats.crashes = 0;
     flightTimes = [];
     avgFlightTime = 0;
+
+// IMPORTANT: Clear all particles and smoke when starting a new game
+    // Clear all smoke particles
+    for (let i = smokeParticles.length - 1; i >= 0; i--) {
+        const particle = smokeParticles[i];
+        scene.remove(particle);
+        disposeObject(particle);
+    }
+    smokeParticles = [];
+    
+    // Clear all explosion particles
+    for (let i = explosionParticles.length - 1; i >= 0; i--) {
+        const particle = explosionParticles[i];
+        scene.remove(particle);
+        disposeObject(particle);
+    }
+    explosionParticles = [];
+
+
+    // Clear damaged buildings array
+    damagedBuildings = [];
     
     // Clear old buildings
     for (let i = buildings.length - 1; i >= 0; i--) {
@@ -3784,43 +4504,72 @@ function restartGame() {
     }
     buildings = [];
     targetBuildings = [];
-
-    // Clear old scorch marks and other effects
-    // (existing cleanup code)
+    
+    // Clear old scorch marks for the new level
+    for (let i = scorchMarks.length - 1; i >= 0; i--) {
+        const scorch = scorchMarks[i];
+        if (scorch.userData.emberEffect) {
+            disposeObject(scorch.userData.emberEffect);
+        }
+        disposeObject(scorch);
+    }
+    scorchMarks = [];
     
     // Create new city
     createCity();
     
-    // IMPORTANT CHANGE: Create the missile but don't reset camera position
-    if (!missile.visible) {
-        resetMissile();
-        
-        // Preserve camera's smooth transition by manually setting the initial smoothed positions
-        // This prevents the camera "jump" by starting where the camera currently is
-        smoothedCameraPosition.copy(camera.position);
-        
-        // Calculate where the camera should be looking (slightly ahead of missile)
-        const lookTarget = missile.position.clone().add(
-            missileDirection.clone().multiplyScalar(10)
-        );
-        smoothedCameraLookAt.copy(lookTarget);
-        
-        // Make sure missile is visible
-        missile.visible = true;
-    }
+    // Create new missile and set camera position
+    missile.visible = false; // Make sure it's hidden before reset
+    resetMissile();
     
+    // Calculate exact camera position behind missile (no smoothing)
+    const exactCameraPos = missile.position.clone().sub(
+        missileDirection.clone().multiplyScalar(cameraOffset.z)
+    );
+    exactCameraPos.y += cameraOffset.y;
+    
+    // Calculate look target
+    const exactLookTarget = missile.position.clone().add(
+        missileDirection.clone().multiplyScalar(10)
+    );
+    
+    // Set camera position directly
+    camera.position.copy(exactCameraPos);
+    smoothedCameraPosition.copy(exactCameraPos);
+    smoothedCameraLookAt.copy(exactLookTarget);
+
+    // Reset camera up vector to ensure it starts level
+    camera.up.set(0, 1, 0);
+    
+    // Reset the vertical reference frame that's used during flight
+    camera.userData.verticalReferenceFrame = {
+        forward: new THREE.Vector3().copy(missileDirection).normalize(),
+        right: new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), missileDirection).normalize(),
+        up: new THREE.Vector3(0, 1, 0)
+    };
+    
+       
+    // Force camera to look at target immediately
+    camera.lookAt(exactLookTarget);
+
+     // Make missile visible
+     missile.visible = true;
+    
+    // Activate the game
     gameActive = true;
     
-    // Explicitly play sounds at restart
+    // Play sounds
     playSound('ui');
     playSound('missile');
     
-    // Reset animation frame handling
+    // Restart animation loop
     if (animationFrameId) {
         cancelAnimationFrame(animationFrameId);
     }
-    lastTime = 0;  // Reset time tracking
+    lastTime = 0;
     animationFrameId = requestAnimationFrame(animate);
+    
+    console.log("Game restarted successfully!");
 }
         
         function onWindowResize() {
@@ -4286,10 +5035,81 @@ function createExplosionTexture() {
     return { geometry: explosionGeometry, material: explosionMaterial };
 }
 
+function cleanupAllParticleSystems() {
+    console.log("Cleaning up all particle systems...");
+    
+    // Clear all particle arrays
+    if (smokeParticles && smokeParticles.length > 0) {
+        for (let i = smokeParticles.length - 1; i >= 0; i--) {
+            const particle = smokeParticles[i];
+            if (particle && scene) {
+                scene.remove(particle);
+                disposeObject(particle);
+            }
+        }
+        smokeParticles = [];
+    }
+    
+    if (explosionParticles && explosionParticles.length > 0) {
+        for (let i = explosionParticles.length - 1; i >= 0; i--) {
+            const particle = explosionParticles[i];
+            if (particle && scene) {
+                scene.remove(particle);
+                disposeObject(particle);
+            }
+        }
+        explosionParticles = [];
+    }
+    
+    // Clear particle batches
+    if (particleBatches && particleBatches.length > 0) {
+        for (let i = particleBatches.length - 1; i >= 0; i--) {
+            const batch = particleBatches[i];
+            if (batch && batch.mesh && scene) {
+                scene.remove(batch.mesh);
+                if (batch.mesh.geometry) batch.mesh.geometry.dispose();
+                if (batch.mesh.material) batch.mesh.material.dispose();
+            }
+        }
+        particleBatches = [];
+    }
+    
+    // Clear all scorch marks
+    if (scorchMarks && scorchMarks.length > 0) {
+        for (let i = scorchMarks.length - 1; i >= 0; i--) {
+            const scorch = scorchMarks[i];
+            if (scorch && scene) {
+                if (scorch.userData && scorch.userData.emberEffect) {
+                    scene.remove(scorch.userData.emberEffect);
+                    disposeObject(scorch.userData.emberEffect);
+                }
+                scene.remove(scorch);
+                disposeObject(scorch);
+            }
+        }
+        scorchMarks = [];
+    }
+    
+    // Clear damaged buildings
+    damagedBuildings = [];
+    
+    // Reset game timers
+    if (gameTimers) {
+        Object.keys(gameTimers).forEach(key => {
+            gameTimers[key] = 0;
+        });
+    }
+    
+    // Force garbage collection (browser will handle this)
+    console.log("Particle systems cleaned up");
+}
+
 
 
 function updateCamera(delta) {
-    if (!missile.visible) return;
+    if (!missile.visible || !camera) return;
+
+    ensureCameraReferences();
     
     // Calculate target camera position
     const targetCameraPos = missile.position.clone().sub(
@@ -4308,13 +5128,20 @@ function updateCamera(delta) {
     // Update camera position
     camera.position.copy(smoothedCameraPosition);
     
-    // Store reference space for vertical flight if not set
+    // IMPORTANT: Create verticalReferenceFrame if it doesn't exist
+    // This is the code that was causing the error
+    if (!camera.userData) camera.userData = {};
     if (!camera.userData.verticalReferenceFrame) {
         camera.userData.verticalReferenceFrame = {
-            forward: new THREE.Vector3(0, 0, 1),
-            right: new THREE.Vector3(1, 0, 0),
+            forward: new THREE.Vector3().copy(missileDirection).normalize(),
+            right: new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), missileDirection).normalize(),
             up: new THREE.Vector3(0, 1, 0)
         };
+    }
+    
+    // Add additional safety check for the up vector
+    if (!camera.userData.verticalReferenceFrame.up) {
+        camera.userData.verticalReferenceFrame.up = new THREE.Vector3(0, 1, 0);
     }
     
     // Get world up and check vertical alignment
@@ -4322,17 +5149,12 @@ function updateCamera(delta) {
     const verticalAlignment = missileDirection.dot(worldUp);
     const isNearVertical = Math.abs(verticalAlignment) > 0.95;
     
-    if (isNearVertical) {
-        // Use stored reference frame to keep camera orientation stable
+    // Use optional chaining for additional safety
+    if (isNearVertical && camera.userData?.verticalReferenceFrame?.up) {
         camera.up.copy(camera.userData.verticalReferenceFrame.up);
     } else {
-        // Update reference frame for future vertical maneuvers
-        camera.userData.verticalReferenceFrame.forward.copy(missileDirection).normalize();
-        camera.userData.verticalReferenceFrame.right.crossVectors(worldUp, missileDirection).normalize();
-        camera.userData.verticalReferenceFrame.up.crossVectors(missileDirection, camera.userData.verticalReferenceFrame.right).normalize();
-        
-        // Smooth transition to world up when not vertical
-        camera.up.lerp(worldUp, cameraSmoothingFactor * 0.5);
+        // Use the default world up when not near vertical or if reference frame is missing
+        camera.up.set(0, 1, 0);
     }
     
     camera.lookAt(smoothedCameraLookAt);
@@ -4341,65 +5163,118 @@ function updateCamera(delta) {
 function updateMinimap() {
     if (!gameActive) return;
     
-    // Update player marker position only
-    playerMarker.position.x = missile.position.x;
-    playerMarker.position.z = missile.position.z;
+    // Always rotate the container with fixed rotation
+    if (minimapContainer && typeof minimapFixedRotation !== 'undefined') {
+        minimapContainer.style.transform = `rotate(${-minimapFixedRotation}rad)`;
+    }
     
-    // No need to update rotation for a circle
+    // Update player marker position and rotation using THREE.js
+    if (playerMarker && missile && missile.position && missileDirection) {
+        // Update position to match actual missile position
+        playerMarker.position.x = missile.position.x;
+        playerMarker.position.z = missile.position.z;
+        
+        // Update rotation
+        const angle = Math.atan2(missileDirection.x, -missileDirection.z);
+        playerMarker.rotation.set(Math.PI / 2, 0, angle);
+    }
     
     // Update and render
     updateMinimapBuildings();
-    minimapRenderer.render(minimapScene, minimapCamera);
+    updateEnemyMinimapMarkers();
+    
+    // Render the minimap scene
+    if (minimapRenderer && minimapScene && minimapCamera) {
+        minimapRenderer.render(minimapScene, minimapCamera);
+    }
 }
 
     // Function to update building representations in minimap
+    // Modify the updateMinimapBuildings function:
     function updateMinimapBuildings() {
-    // Hide all dots from previous frame
-    minimapBuildingDots.forEach(dot => {
-        dot.visible = false;
-    });
+    // Safety check
+    if (!minimapScene) return;
     
-    let targetCount = 0;
-    let regularCount = 0;
+    // First, hide all existing dots
+    for (let i = 0; i < minimapBuildingDots.length; i++) {
+        if (minimapBuildingDots[i]) {
+            minimapBuildingDots[i].visible = false;
+        }
+    }
     
-    // Update positions of existing dots or create new ones as needed
-    buildings.forEach(building => {
+    // If we don't have the pool initialized, do it now - REPLACE CIRCLES WITH SQUARES
+    if (!minimapDotPool.geometryRegular) {
+        // Create square geometries instead of circles - 50% larger
+        minimapDotPool.geometryRegular = new THREE.PlaneGeometry(18, 18); // 1.8 instead of 1.2
+        minimapDotPool.geometryTarget = new THREE.PlaneGeometry(23, 23);  // 2.3 instead of 1.5
+        
+        // Brighter colors for better visibility
+        minimapDotPool.materialRegular = new THREE.MeshBasicMaterial({color: 0xffffff});
+        minimapDotPool.materialTarget = new THREE.MeshBasicMaterial({color: 0xff0000});
+    }
+    
+    // Reuse existing dots or create new ones as needed
+    for (let i = 0; i < buildings.length; i++) {
+        const building = buildings[i];
         let dot;
         
-        if (building.userData.isTarget) {
-            // Use a target dot from pool or create new one
-            if (targetCount < minimapDotPool.target.length) {
-                dot = minimapDotPool.target[targetCount];
+        // Reuse dot if possible
+        if (i < minimapBuildingDots.length) {
+            dot = minimapBuildingDots[i];
+            dot.visible = true;
+            
+            // Update color if needed
+            if (building.userData.isTarget) {
+                dot.material.color.setHex(0xff0000);
             } else {
-                dot = new THREE.Mesh(minimapDotPool.geometryTarget, minimapDotPool.materialTarget);
-                dot.rotation.x = -Math.PI / 2;
-                minimapScene.add(dot);
-                minimapDotPool.target.push(dot);
-                minimapBuildingDots.push(dot);
+                dot.material.color.setHex(0xffffff);
             }
-            targetCount++;
         } else {
-            // Use a regular dot from pool or create new one
-            if (regularCount < minimapDotPool.regular.length) {
-                dot = minimapDotPool.regular[regularCount];
+            // Create new dot if needed using pool
+            if (building.userData.isTarget) {
+                // Try to get from target pool
+                if (minimapDotPool.target.length > 0) {
+                    dot = minimapDotPool.target.pop();
+                    dot.visible = true;
+                } else {
+                    // Create new target dot
+                    dot = new THREE.Mesh(
+                        minimapDotPool.geometryTarget, 
+                        minimapDotPool.materialTarget.clone()
+                    );
+                }
             } else {
-                dot = new THREE.Mesh(minimapDotPool.geometryRegular, minimapDotPool.materialRegular);
-                dot.rotation.x = -Math.PI / 2;
-                minimapScene.add(dot);
-                minimapDotPool.regular.push(dot);
-                minimapBuildingDots.push(dot);
+                // Try to get from regular pool
+                if (minimapDotPool.regular.length > 0) {
+                    dot = minimapDotPool.regular.pop();
+                    dot.visible = true;
+                } else {
+                    // Create new regular dot
+                    dot = new THREE.Mesh(
+                        minimapDotPool.geometryRegular, 
+                        minimapDotPool.materialRegular.clone()
+                    );
+                }
             }
-            regularCount++;
+            
+            minimapScene.add(dot);
+            minimapBuildingDots.push(dot);
         }
         
-        // Update position and make visible
-        dot.position.set(building.position.x, 0, building.position.z);
-        dot.visible = true;
-    });
+        // Position the dot with correct rotation for orthographic top-down view
+        dot.position.x = building.position.x;
+        dot.position.z = building.position.z;
+        dot.position.y = 1.5; // Slightly higher for better visibility
+        
+        // CRITICAL: Keep the correct rotation for the square to be visible from above
+        dot.rotation.x = -Math.PI / 2; // This makes the flat square face upward
+        
+        dot.rotation.z = 0;
+    }
 }
 
 
-    function createEnemyMissile() {
+function createEnemyMissile() {
     // Choose random edge of map to spawn from
     const spawnIndex = Math.floor(Math.random() * spawnPoints.length);
     const spawnPosition = spawnPoints[spawnIndex].clone();
@@ -4414,7 +5289,33 @@ function updateMinimap() {
     
     // Body (slightly different from player's missile)
     const bodyGeometry = new THREE.CylinderGeometry(0.8, 0.8, 7, 16);
-    const bodyMaterial = new THREE.MeshStandardMaterial({ color: 0x5C5C5C });
+    
+    // Assign a specific pilot to this missile
+    const pilotIndex = Math.floor(Math.random() * enemyPilotStats.length);
+    const pilot = enemyPilotStats[pilotIndex];
+    
+    // Use pilot's color if available (or generate one)
+    const missileColor = pilot.color || new THREE.Color(
+        0.3 + Math.random() * 0.7, 
+        0.3 + Math.random() * 0.7, 
+        0.3 + Math.random() * 0.7
+    ).getHex();
+    
+    // Convert hex to string format if needed
+    const colorStr = typeof missileColor === 'number' ? 
+        '#' + missileColor.toString(16).padStart(6, '0') : missileColor;
+    
+    // Store pilot color if not already set
+    if (!pilot.color) {
+        pilot.color = colorStr;
+    }
+    
+    const bodyMaterial = new THREE.MeshStandardMaterial({ 
+        color: colorStr,
+        metalness: 0.3,
+        roughness: 0.6
+    });
+    
     const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
     body.castShadow = false;
     enemyMissile.add(body);
@@ -4485,11 +5386,13 @@ function updateMinimap() {
     // Save properties
     enemyMissile.userData = {
         direction: direction,
-        speed: THREE.MathUtils.randFloat(0.4, 0.8), // Slightly faster
+        speed: THREE.MathUtils.randFloat(0.4, 0.8),
         smokeTimer: 0,
         targetPosition: targetPosition,
         targetBuilding: targetBuilding,
-        guidanceAccuracy: THREE.MathUtils.randFloat(0.85, 0.98) // How accurately it tracks (different per missile)
+        guidanceAccuracy: THREE.MathUtils.randFloat(0.85, 0.98),
+        pilotId: pilot.id, // Store which pilot is flying this missile
+        pilotName: pilot.name // Store pilot name for easier reference
     };
     
     // Align missile with direction
@@ -4501,96 +5404,225 @@ function updateMinimap() {
     
     // Add to enemy missiles array
     enemyMissiles.push(enemyMissile);
-}   
+}
 
 // Update enemy missiles
 function updateEnemyMissiles(delta) {
-    // Spawn new enemy missiles
-    if (gameActive && stats.targetsRemaining > 0) {
-        enemyMissileTimer += delta;
-        
-        if (enemyMissileTimer >= enemyMissileSpawnRate && enemyMissiles.length < maxEnemyMissiles) {
-            createEnemyMissile();
-            enemyMissileTimer = 0;
-        }
-    }
+    // Skip if game is not active
+    if (!gameActive) return;
     
-    // Update existing enemy missiles
+    // Update each enemy missile
     for (let i = enemyMissiles.length - 1; i >= 0; i--) {
-        const enemyMissile = enemyMissiles[i];
+        const enemy = enemyMissiles[i];
+        if (!enemy) continue;
         
-        // Check if target still exists
-        if (enemyMissile.userData.targetBuilding && 
-            !buildings.includes(enemyMissile.userData.targetBuilding)) {
+        // Get the target for this enemy
+        const target = enemy.userData.targetBuilding;
+        
+        // Skip if target no longer exists
+        if (!target || !target.parent) {
+            // Target was destroyed, find a new one
+            assignNewTargetToEnemyMissile(enemy);
+            continue;
+        }
+        
+        // Calculate direction to target
+        const targetPos = target.position.clone();
+        const dirToTarget = targetPos.clone().sub(enemy.position).normalize();
+        
+        // ENHANCED: Add obstacle detection with raycasting
+        const raycaster = new THREE.Raycaster(
+            enemy.position.clone(),
+            dirToTarget.clone(),
+            0,
+            50 // Detection range
+        );
+        
+        // Exclude target from obstacle detection
+        const obstacles = buildings.filter(b => b !== target);
+        
+        // Check for obstacles in the path
+        const intersects = raycaster.intersectObjects(obstacles);
+        let obstacleAvoidance = new THREE.Vector3(0, 0, 0);
+        let shouldFlyOver = false;
+        
+        // IMPORTANT: Define currentObstacle outside the if block so it's available later
+        let currentObstacle = null;
+        
+        // If obstacle detected, calculate avoidance vector
+        if (intersects.length > 0) {
+            currentObstacle = intersects[0].object;
+            const distToObstacle = intersects[0].distance;
             
-            // Target was destroyed, select a new one or aim at city center
-            if (buildings.length > 0) {
-                const newTarget = buildings[Math.floor(Math.random() * buildings.length)];
-                enemyMissile.userData.targetBuilding = newTarget;
-                enemyMissile.userData.targetPosition = newTarget.position.clone();
-                enemyMissile.userData.targetPosition.y = newTarget.userData.height / 2;
+            // Decide whether to fly over or around based on distance and building height
+            const buildingHeight = currentObstacle.userData.height;
+            const distanceRatio = distToObstacle / 50; // Normalized distance (0-1)
+            
+            // Decide avoidance strategy based on building properties and distance
+            if (buildingHeight > 80 || distToObstacle < 20) {
+                // For tall buildings or close obstacles, fly over
+                shouldFlyOver = true;
+                
+                // Calculate vertical avoidance (higher for taller buildings)
+                const verticalOffset = Math.max(20, buildingHeight * 0.7);
+                obstacleAvoidance.y = verticalOffset * (1 - distanceRatio);
             } else {
-                enemyMissile.userData.targetBuilding = null;
-                enemyMissile.userData.targetPosition = new THREE.Vector3(0, 0, 0);
+                // For shorter/farther buildings, steer around
+                // Get vector from obstacle to missile
+                const obstacleDir = enemy.position.clone().sub(currentObstacle.position).normalize();
+                
+                // Project onto horizontal plane for sideways avoidance
+                obstacleDir.y = 0;
+                obstacleDir.normalize();
+                
+                // Scale avoidance based on distance (stronger when closer)
+                const avoidanceStrength = 1 / (distanceRatio + 0.1);
+                obstacleAvoidance.copy(obstacleDir).multiplyScalar(avoidanceStrength);
             }
         }
         
-        // Calculate new direction to target with guidance
-        if (enemyMissile.userData.targetPosition) {
-            const newDirection = new THREE.Vector3()
-                .subVectors(enemyMissile.userData.targetPosition, enemyMissile.position)
-                .normalize();
-                
-            // Gradually adjust direction based on guidance accuracy
-            enemyMissile.userData.direction.lerp(
-                newDirection, 
-                delta * 2 * enemyMissile.userData.guidanceAccuracy
-            ).normalize();
-            
-            // Align missile with its current direction
-            const missileRotation = new THREE.Quaternion().setFromUnitVectors(
-                new THREE.Vector3(0, 1, 0), 
-                enemyMissile.userData.direction
-            );
-            enemyMissile.quaternion.copy(missileRotation);
+        // ENHANCED: Add target approach behavior
+        let approachVector = new THREE.Vector3();
+        const distToTarget = enemy.position.distanceTo(targetPos);
+        
+        // If we're getting close to the target
+        if (distToTarget < 100) {
+            // Calculate approach vector - dive toward target if we're above it
+            if (enemy.position.y > target.position.y + 20) {
+                // Sharp descent toward target
+                approachVector.copy(dirToTarget).multiplyScalar(2);
+            } else {
+                // Normal approach
+                approachVector.copy(dirToTarget);
+            }
+        } else {
+            // Far from target - continue on path
+            approachVector.copy(dirToTarget);
         }
         
-        // Move missile
-        enemyMissile.position.add(
-            enemyMissile.userData.direction.clone().multiplyScalar(enemyMissile.userData.speed * delta * 60)
-        );
+        // Combine vectors for final direction
+        let finalDirection = new THREE.Vector3();
         
-        // Create smoke trail
-        enemyMissile.userData.smokeTimer -= delta;
-        if (enemyMissile.userData.smokeTimer <= 0) {
-            createEnemyMissileSmoke(enemyMissile);
-            enemyMissile.userData.smokeTimer = 0.4; // Smoke every 0.4 seconds
+        // FIXED: Only try to access currentObstacle if it exists
+        if (shouldFlyOver && currentObstacle !== null) {
+            // When flying over, prioritize gaining altitude first
+            if (enemy.position.y < currentObstacle.position.y + currentObstacle.userData.height + 20) {
+                // Need more height - strong upward component
+                finalDirection.set(
+                    dirToTarget.x * 0.3,
+                    0.7, // Strong upward bias
+                    dirToTarget.z * 0.3
+                ).normalize();
+            } else {
+                // Enough height - can move toward target with downward angle
+                finalDirection.copy(dirToTarget).normalize();
+            }
+        } else {
+            // Normal steering with obstacle avoidance
+            finalDirection.copy(dirToTarget)
+                .add(obstacleAvoidance.multiplyScalar(1.5))
+                .add(approachVector)
+                .normalize();
+        }
+        
+        // Update missile direction with smoothing
+        enemy.userData.direction.lerp(finalDirection, 0.07);
+        enemy.userData.direction.normalize();
+        
+        // Update rotation to match direction
+        const enemyQuat = new THREE.Quaternion().setFromUnitVectors(
+            new THREE.Vector3(0, 1, 0), 
+            enemy.userData.direction
+        );
+        enemy.quaternion.copy(enemyQuat);
+        
+        // Check for collisions with terrain or buildings
+        if (enemy.position.y < 1) {
+            handleEnemyMissileImpact(enemy, i);
+            continue;
         }
         
         // Check for collisions with buildings
-        const collided = checkEnemyMissileCollisions(enemyMissile, i);
-        if (collided) {
-        // Skip rest of loop if collision occurred
-        continue;
+        checkEnemyMissileCollisions(enemy, i);
     }
-        
-        // Check if missile has gone too far (missed completely)
-        if (enemyMissile.position.distanceTo(new THREE.Vector3(0, 0, 0)) > citySize * 3) {
-            scene.remove(enemyMissile);
-            enemyMissiles.splice(i, 1);
-        }
+    
+    // Spawn new enemy missiles if needed
+    enemyMissileTimer -= delta;
+    if (enemyMissileTimer <= 0 && enemyMissiles.length < maxEnemyMissiles && gameActive) {
+        createEnemyMissile();
+        enemyMissileTimer = enemyMissileSpawnRate;
     }
 }
 
-function updatePortalMaterials(delta = 0.016) {
-    if (!window.portalRings) return;
+function assignNewTargetToEnemyMissile(enemy) {
+    // Early exit if no targets remain
+    if (targetBuildings.length === 0) {
+        return false;
+    }
     
-    for (const portal of window.portalRings) {
-        if (portal.material && portal.material.uniforms && portal.material.uniforms.time) {
-            portal.material.uniforms.time.value += delta;
+    // Calculate distances of all targets from the missile's position
+    const targetsWithDistance = targetBuildings.map(target => {
+        const distToTarget = enemy.position.distanceTo(target.position);
+        return { target, distToTarget };
+    });
+    
+    // Sort by distance from missile (ascending - closest first)
+    targetsWithDistance.sort((a, b) => a.distToTarget - b.distToTarget);
+    
+    // Add some randomness - pick from the closest 40% of targets
+    // This ensures missiles still have some variety in targeting
+    const closerTargetsCount = Math.max(1, Math.floor(targetsWithDistance.length * 0.4));
+    const closerTargets = targetsWithDistance.slice(0, closerTargetsCount);
+    const randomIndex = Math.floor(Math.random() * closerTargets.length);
+    
+    // Assign this target to the missile
+    enemy.userData.targetBuilding = closerTargets[randomIndex].target;
+    
+    // Adjust height based on target position and surrounding buildings
+    adjustEnemyApproachHeight(enemy);
+    
+    return true;
+}
+
+
+
+// Adjust enemy missile height based on path to target
+function adjustEnemyApproachHeight(enemy) {
+    const target = enemy.userData.targetBuilding;
+    if (!target) return;
+    
+    // Get distance to target
+    const distToTarget = enemy.position.distanceTo(target.position);
+    
+    // Sample points along path to target to find max building height
+    let maxHeightOnPath = 0;
+    const steps = 8;
+    const dirToTarget = target.position.clone().sub(enemy.position).normalize();
+    
+    for (let i = 1; i < steps; i++) {
+        const t = i / steps;
+        const samplePos = enemy.position.clone().add(
+            dirToTarget.clone().multiplyScalar(t * distToTarget)
+        );
+        
+        // Find buildings near this sample point
+        for (const building of buildings) {
+            const buildingDist = samplePos.distanceTo(
+                new THREE.Vector3(building.position.x, samplePos.y, building.position.z)
+            );
+            
+            if (buildingDist < building.userData.width * 1.2 && 
+                building.position.y + building.userData.height > maxHeightOnPath) {
+                maxHeightOnPath = building.position.y + building.userData.height;
+            }
         }
     }
+    
+    // Set initial approach height based on path obstacles
+    const approachHeight = Math.max(80, maxHeightOnPath + 20);
+    enemy.position.y = Math.max(enemy.position.y, approachHeight);
 }
+
 
 // Add adaptive resolution during intense action
 function adjustResolutionForPerformance() {
@@ -4603,38 +5635,112 @@ function adjustResolutionForPerformance() {
 
 // Check collisions for enemy missiles
 function checkEnemyMissileCollisions(enemyMissile, index) {
-    // Simplified collision check with more reliable detection
-    const missilePos = enemyMissile.position;
+    if (!enemyMissile) return false;
     
-    // Ground collision
-    if (missilePos.y < 1) {
-        handleEnemyMissileImpact(enemyMissile, index);
+    // Check ground collision
+    if (enemyMissile.position.y < 0.8) {
+        // Create explosion at impact point
+        createExplosion(enemyMissile.position.clone(), false, true);
+        playEnemyExplosionSound();
+        
+        // Record the crash to the pilot's stats if possible
+        if (enemyMissile.userData && enemyMissile.userData.pilotId) {
+            const pilot = enemyPilotStats.find(p => p.id === enemyMissile.userData.pilotId);
+            if (pilot) {
+                pilot.crashes++;
+            }
+        }
+        
+        // Remove missile
+        scene.remove(enemyMissile);
+        enemyMissiles.splice(index, 1);
         return true;
     }
     
-    // Building collision with improved detection
-    for (let j = 0; j < buildings.length; j++) {
-        const building = buildings[j];
-        const halfWidth = building.userData.width / 2;
-        const halfHeight = building.userData.height / 2;
+    // Check building collisions
+    for (let i = 0; i < buildings.length; i++) {
+        const building = buildings[i];
         
-        // More precise collision detection 
-        // Check if missile is inside building box with a small buffer
-        if (Math.abs(missilePos.x - building.position.x) < halfWidth + 1.5 &&
-            Math.abs(missilePos.y - building.position.y) < halfHeight + 1.5 &&
-            Math.abs(missilePos.z - building.position.z) < halfWidth + 1.5) {
-
-         // Handle impact
-         handleEnemyMissileImpact(enemyMissile, index, building);
-            return true;
-        }        
+        // Simple collision detection with bounding box
+        const distX = Math.abs(enemyMissile.position.x - building.position.x);
+        const distZ = Math.abs(enemyMissile.position.z - building.position.z);
+        
+        const buildingHalfWidth = building.userData.width / 2;
+        const buildingHeight = building.userData.height;
+        
+        // Check if within building bounds
+        if (distX < buildingHalfWidth + 1 && 
+            distZ < buildingHalfWidth + 1 && 
+            enemyMissile.position.y < buildingHeight) {
             
-        const missileVelocity = enemyMissile.userData.direction.clone().multiplyScalar(enemyMissile.userData.speed * 20);
-        const missileEnd = missilePos.clone().add(missileVelocity);
-        
-        // Check if line segment intersects building box
-        if (lineBoxIntersection(missilePos, missileEnd, building)) {
-            handleEnemyMissileImpact(enemyMissile, index, building);
+            // Create explosion at impact point
+              // Create explosion at impact point
+              createExplosion(enemyMissile.position.clone(), false, true);
+            playEnemyExplosionSound();
+            
+            // CRITICAL FIX: If it's a target building, register the kill for the pilot
+            if (building.userData && building.userData.isTarget === true) {
+                console.log("Enemy missile hit a target building!");
+                
+                // Find which pilot fired this missile
+                if (enemyMissile.userData && enemyMissile.userData.pilotId) {
+                    const pilotId = enemyMissile.userData.pilotId;
+                    
+                    // Find the pilot in the stats array
+                    for (let j = 0; j < enemyPilotStats.length; j++) {
+                        if (enemyPilotStats[j].id === pilotId) {
+                            console.log(`Pilot ${enemyPilotStats[j].name} (${pilotId}) scored a hit!`);
+                            
+                            // Increment their kills and immediately log the new value
+                            enemyPilotStats[j].targetsDestroyed++;
+                            console.log(`${enemyPilotStats[j].name} now has ${enemyPilotStats[j].targetsDestroyed} kills`);
+                            
+                            // Force immediate leaderboard update
+                            setTimeout(updateLeaderboard, 0);
+                            break;
+                        }
+                    }
+                }
+                
+                // Remove target from scene and arrays
+                scene.remove(building);
+                const targetIndex = buildings.indexOf(building);
+                if (targetIndex > -1) {
+                    buildings.splice(targetIndex, 1);
+                }
+                
+                const targetBuildingIndex = targetBuildings.indexOf(building);
+                if (targetBuildingIndex > -1) {
+                    targetBuildings.splice(targetBuildingIndex, 1);
+                }
+                
+                // Update stats
+                stats.targetsRemaining--;
+                stats.targetsDestroyed++;
+                
+                // Create scorch mark
+                const scorchPosition = new THREE.Vector3(building.position.x, -0.3, building.position.z);
+                createScorchMark(scorchPosition, false);
+                
+                // Check if all targets are destroyed
+                if (stats.targetsRemaining <= 0) {
+                    setTimeout(() => {
+                        showGameOver();
+                    }, 3000);
+                }
+            } else {
+                // Record crash to the pilot's stats if possible
+                if (enemyMissile.userData && enemyMissile.userData.pilotId) {
+                    const pilot = enemyPilotStats.find(p => p.id === enemyMissile.userData.pilotId);
+                    if (pilot) {
+                        pilot.crashes++;
+                    }
+                }
+            }
+            
+            // Remove missile
+            scene.remove(enemyMissile);
+            enemyMissiles.splice(index, 1);
             return true;
         }
     }
@@ -4679,6 +5785,9 @@ function handleEnemyMissileImpact(enemyMissile, index, building = null) {
     // Get impact position
     const impactPosition = enemyMissile.position.clone();
     
+    // Get the pilot who launched this missile
+    const pilotId = enemyMissile.userData.pilotId;
+    
     // Building collision
     if (building) {
         // Use the same sophisticated explosion system with smaller size (isPlayerEvent = false)
@@ -4696,11 +5805,24 @@ function handleEnemyMissileImpact(enemyMissile, index, building = null) {
         // Handle target building if applicable
         if (building.userData.isTarget) {
             handleEnemyTargetHit(building);
+            
+            // Track enemy success stats with specific pilot ID
+            updateSpecificPilotStats(pilotId, true, true);
+            
+            // Show update in the console for debugging
+            console.log(`Pilot ${enemyMissile.userData.pilotName} destroyed a target!`);
+        } else {
+            // Track enemy crash stats with specific pilot ID
+            updateSpecificPilotStats(pilotId, false, false);
+            console.log(`Pilot ${enemyMissile.userData.pilotName} crashed into a building.`);
         }
     } 
     // Ground collision - create ground scorch with smoke
     else {
         createExplosion(impactPosition, false, true);
+        // Track enemy crash stats with specific pilot ID
+        updateSpecificPilotStats(pilotId, false, false);
+        console.log(`Pilot ${enemyMissile.userData.pilotName} crashed into the ground.`);
     }
     
     // Play explosion sound with pooled audio
@@ -4709,6 +5831,67 @@ function handleEnemyMissileImpact(enemyMissile, index, building = null) {
     // Remove missile
     scene.remove(enemyMissile);
     enemyMissiles.splice(index, 1);
+}
+
+// Function to update stats for a specific pilot
+function updateSpecificPilotStats(pilotId, isHit, isDestroyed) {
+    // Find the pilot in the stats array
+    const pilotIndex = enemyPilotStats.findIndex(pilot => pilot.id === pilotId);
+    
+    // If pilot not found, exit
+    if (pilotIndex === -1) return;
+    
+    const pilot = enemyPilotStats[pilotIndex];
+    
+    // Update stats
+    if (isHit && isDestroyed) {
+        pilot.targetsDestroyed++;
+    } else {
+        pilot.crashes++;
+    }
+    
+    // Update TPM properly based on total time
+    pilot.tpm = calculateTPM(pilot.targetsDestroyed, pilot.totalPlayTimeSeconds);
+    
+    // Update leaderboard immediately
+    updateLeaderboard();
+}
+
+// Initialize enemy pilot stats with more realistic and identifiable data
+function initializeEnemyPilots() {
+    enemyPilotStats = [
+        { id: "cpu_1", name: "Marksman42", targetsDestroyed: 0, crashes: 0, roundsWon: 0, color: "#ff5500" },
+        { id: "cpu_2", name: "SkyStalker", targetsDestroyed: 0, crashes: 0, roundsWon: 0, color: "#66ccff" },
+        { id: "cpu_3", name: "MissileKing", targetsDestroyed: 0, crashes: 0, roundsWon: 0, color: "#66ff66" },
+        { id: "cpu_4", name: "StrikeForce", targetsDestroyed: 0, crashes: 0, roundsWon: 0, color: "#ffcc00" },
+        { id: "cpu_5", name: "TargetLocka", targetsDestroyed: 0, crashes: 0, roundsWon: 0, color: "#ff00ff" }
+    ];
+}
+
+function determineRoundWinner() {
+    // Create a copy of all pilots including the player
+    const allPilots = [...enemyPilotStats, playerStats];
+    
+    // Sort by targets destroyed (highest first)
+    allPilots.sort((a, b) => b.targetsDestroyed - a.targetsDestroyed);
+    
+    // Check for a winner (highest kills)
+    const highestKills = allPilots[0].targetsDestroyed;
+    
+    // Filter to get all pilots with the highest score (could be multiple in case of a tie)
+    const winners = allPilots.filter(pilot => pilot.targetsDestroyed === highestKills);
+    
+    // If there are any winners (kills > 0)
+    if (winners.length > 0 && highestKills > 0) {
+        // Increment rounds won for all winners
+        winners.forEach(winner => {
+            winner.roundsWon += 1;
+        });
+        
+        return winners;
+    }
+    
+    return null; // No winner (nobody got any kills)
 }
 
 function initFlightSoundPool() {
@@ -4764,14 +5947,13 @@ function handleEnemyTargetHit(target) {
     const targetPosition = target.position.clone();
     const buildingWidth = target.userData.width;  // Get width for scorch size
     
-   // Use the same explosion function as player missiles
-   createExplosion(targetPosition, false, false);
+    // Use the same explosion function as player missiles
+    createExplosion(targetPosition, false, false);
     
     // Screen shake
     screenShakeTime = 0.6;
     screenShakeIntensity = 1.2;
     
-        
     // Remove target from scene and arrays
     scene.remove(target);
     const targetIndex = buildings.indexOf(target);
@@ -4787,8 +5969,8 @@ function handleEnemyTargetHit(target) {
         const scorchPosition = new THREE.Vector3(targetPosition.x, -0.3, targetPosition.z);
         createScorchMark(scorchPosition, false);
 
-         // Make it slightly larger than normal - THIS WAS MISSING
-         const lastScorch = scorchMarks[scorchMarks.length - 1];
+        // Make it slightly larger than normal - THIS WAS MISSING
+        const lastScorch = scorchMarks[scorchMarks.length - 1];
         if (lastScorch) {
             const scorchSize = buildingWidth * 1.2; // Slightly bigger than building base
             lastScorch.scale.set(scorchSize, scorchSize, 1);
@@ -4799,6 +5981,7 @@ function handleEnemyTargetHit(target) {
             
             // Make this scorch produce more smoke
             lastScorch.userData.smokeIntensity = 1.5;
+            lastScorch.userData.isTargetHit = true;
         }
         
         // Create smoke column 
@@ -4951,18 +6134,9 @@ function createEnemyMissileSmoke(enemyMissile) {
 }
 
 function addDummyPlayers() {
-    // Add some fake players for testing
-    const dummyPlayers = [
-        { id: "cpu_1", name: "Marksman42", targetsDestroyed: 12, totalPlayTimeSeconds: 180, tpm: 4.0 },
-        { id: "cpu_2", name: "SkyStalker", targetsDestroyed: 18, totalPlayTimeSeconds: 320, tpm: 3.4 },
-        { id: "cpu_3", name: "MissileWizard", targetsDestroyed: 8, totalPlayTimeSeconds: 150, tpm: 3.2 },
-        { id: "cpu_4", name: "StrikeForce", targetsDestroyed: 5, totalPlayTimeSeconds: 120, tpm: 2.5 },
-        { id: "cpu_5", name: "TargetLocked", targetsDestroyed: 4, totalPlayTimeSeconds: 180, tpm: 1.3 }
-    ];
-    
-    leaderboard = [...dummyPlayers];
+    // Don't add fake data - we'll track real enemy missile stats
+    leaderboard = [...enemyPilotStats];
 }
-
 
 
 function createLeaderboard() {
@@ -4971,14 +6145,14 @@ function createLeaderboard() {
         const leaderboardDiv = document.createElement('div');
         leaderboardDiv.id = 'leaderboard';
         leaderboardDiv.innerHTML = `
-            <div class="leaderboard-title">MISSILE PILOTS</div>
+            <div class="leaderboard-title">TOP PILOTS</div>
             <table class="leaderboard-table">
                 <thead>
                     <tr>
-                        <th>PILOT</th>
-                        <th>TPM</th>
-                        <th>HITS</th>
-                        <th>CRASHES</th>
+                        <th class="rank-column">#</th>
+                        <th class="name-column">NAME</th>
+                        <th class="score-column">KILLS</th>
+                        <th class="wins-column">WINS</th>
                     </tr>
                 </thead>
                 <tbody id="leaderboard-entries">
@@ -4987,76 +6161,155 @@ function createLeaderboard() {
             </table>
         `;
         document.body.appendChild(leaderboardDiv);
+        
+        // Add CSS for the leaderboard
+        const style = document.createElement('style');
+        style.textContent = `
+            #leaderboard {
+                position: absolute;
+                top: 20px;
+                right: 20px;
+                background-color: rgba(0, 0, 0, 0.7);
+                border: 1px solid #ff3333;
+                border-radius: 5px;
+                padding: 10px;
+                font-family: 'Quantico', sans-serif;
+                color: white;
+                width: 280px;
+                z-index: 100;
+            }
+            
+            .leaderboard-title {
+                font-size: 18px;
+                font-weight: bold;
+                text-align: center;
+                margin-bottom: 10px;
+                color: #66ccff;
+            }
+            
+            .leaderboard-table {
+                width: 100%;
+                border-collapse: collapse;
+                font-size: 14px;
+            }
+            
+            .leaderboard-table th, .leaderboard-table td {
+                padding: 4px 6px;
+                text-align: left;
+            }
+            
+            .leaderboard-table th {
+                border-bottom: 1px solid #444;
+                color: #aaaaaa;
+            }
+            
+            .rank-column {
+                width: 10%;
+                text-align: center;
+            }
+            
+            .name-column {
+                width: 45%;
+                text-align: left;
+            }
+            
+            .score-column {
+                width: 20%;
+                text-align: center;
+            }
+            
+            .rate-column {
+                width: 25%;
+                text-align: right;
+            }
+            
+            .player-entry {
+                background-color: rgba(255, 51, 51, 0.2);
+            }
+            
+            .player-entry.highlight {
+                animation: highlight-pulse 1.5s ease-in-out;
+            }
+            
+            @keyframes highlight-pulse {
+                0% { background-color: rgba(255, 51, 51, 0.2); }
+                50% { background-color: rgba(255, 51, 51, 0.6); }
+                100% { background-color: rgba(255, 51, 51, 0.2); }
+            }
+        `;
+        document.head.appendChild(style);
     }
     
-    // Initial update
+    // Initial update - do it immediately
     updateLeaderboard();
 }
 
-function updatePlayerStats(delta) {
-    if (!gameActive || resetDelay > 0) return;
+// Update player stats to properly track time and calculate TPM
+function updatePlayerStats(deltaTime) {
+    // Only update while game is active
+    if (!gameActive) return;
     
-    // Update active play time
-    playerStats.activePlayTimeSeconds += delta;
-    playerStats.totalPlayTimeSeconds += delta;
+    // Update total play time (in seconds) - use passed deltaTime for more accuracy
+    if (deltaTime) {
+        playerStats.totalPlayTimeSeconds += deltaTime;
+    } else {
+        // Fallback to 1/60th of a second if no delta provided
+        playerStats.totalPlayTimeSeconds += 1/60;
+    }
     
-    // Calculate current TPM
-    playerStats.tpm = calculateTPM(playerStats.targetsDestroyed, playerStats.totalPlayTimeSeconds);
-    
+    // Recalculate TPM with the correct arguments
+    playerStats.tpm = calculateTPM(
+        playerStats.targetsDestroyed, 
+        playerStats.totalPlayTimeSeconds
+    );
 }
 
-// Kills Per Minute calculation
-function calculateTPM(targetsDestroyed, playTimeSeconds) {
-    if (playTimeSeconds <= 0) return 0;
+// Function to calculate Targets Per Minute (TPM) rate
+function calculateTPM(kills, totalTimeSeconds) {
+    if (!totalTimeSeconds || totalTimeSeconds <= 0) return 0;
     
-    // Calculate Targets Per Minute
-    const playTimeMinutes = playTimeSeconds / 60;
-    return targetsDestroyed / playTimeMinutes;
+    // More precise TPM calculation
+    return (kills / totalTimeSeconds) * 60;
 }
 
 // Add function to update the leaderboard
 function updateLeaderboard() {
-    const leaderboardElement = document.getElementById('leaderboard');
-    if (!leaderboardElement) return;
+    console.log("Updating leaderboard:");
     
-    // Create header if it doesn't exist
-    if (!document.querySelector('.leaderboard-title')) {
-        leaderboardElement.innerHTML = `
-            <div class="leaderboard-title">Global Leaderboard</div>
-            <table class="leaderboard-table">
-                <thead>
-                    <tr>
-                        <th>Player</th>
-                        <th>TPM</th>
-                        <th>Targets</th>
-                    </tr>
-                </thead>
-                <tbody id="leaderboard-entries">
-                </tbody>
-            </table>
-        `;
+    // Debug print all pilots
+    enemyPilotStats.forEach(pilot => {
+        console.log(`${pilot.name}: ${pilot.targetsDestroyed} kills, ${pilot.roundsWon} wins`);
+    });
+    console.log(`Player: ${playerStats.targetsDestroyed} kills, ${playerStats.roundsWon} wins`);
+    
+    // Get the leaderboard table body
+    const leaderboardEntries = document.getElementById('leaderboard-entries');
+    if (!leaderboardEntries) {
+        console.error("Leaderboard entries element not found!");
+        return;
     }
     
-    const leaderboardEntries = document.getElementById('leaderboard-entries');
-    if (!leaderboardEntries) return;
+    // Create a fresh copy of the stats
+    const displayStats = [...enemyPilotStats, playerStats];
+    
+    // Sort by kills (highest first)
+    displayStats.sort((a, b) => b.targetsDestroyed - a.targetsDestroyed);
     
     // Generate HTML
     let html = '';
-    for (let i = 0; i < leaderboard.length; i++) {
-        const player = leaderboard[i];
-        const isCurrentPlayer = player.id === playerStats.firebaseId;
-        
+    displayStats.forEach((pilot, index) => {
+        const isPlayer = pilot.id === playerStats.id;
         html += `
-            <tr id="player-${player.id}" class="${isCurrentPlayer ? 'you' : ''}">
-                <td class="name" style="color: ${player.color}">
-                    ${isCurrentPlayer ? '➤ ' : ''}${player.name}
-                </td>
-                <td class="tpm">${player.tpm.toFixed(2)}</td>
-                <td>${player.targetsDestroyed}</td>
+            <tr class="${isPlayer ? 'player-entry' : ''}" id="${isPlayer ? 'player-' + pilot.id : ''}">
+                <td class="rank-column">${index + 1}</td>
+                <td class="name-column" style="color: ${pilot.color || '#ffffff'}">${pilot.name}</td>
+                <td class="score-column">${pilot.targetsDestroyed}</td>
+                <td class="wins-column">${pilot.roundsWon || 0}</td>
             </tr>
         `;
-    }
+    });
     
+    // Update the DOM
     leaderboardEntries.innerHTML = html;
 }
 
@@ -5070,7 +6323,26 @@ function syncPlayerStatsToFirebase() {
     }
 }
 
-
+// Update function for enemy pilot stats
+function updateEnemyPilotStats(isHit, isDestroyed) {
+    if (enemyPilotStats.length === 0) return;
+    
+    // Pick random enemy pilot to credit
+    const pilotIndex = Math.floor(Math.random() * enemyPilotStats.length);
+    const pilot = enemyPilotStats[pilotIndex];
+    
+    if (isHit && isDestroyed) {
+        pilot.targetsDestroyed++;
+    } else if (!isHit) {
+        pilot.crashes++;
+    }
+    
+    // Update their rate
+    pilot.tpm = calculateTPM(pilot.targetsDestroyed, pilot.totalPlayTimeSeconds);
+    
+    // Update the leaderboard
+    updateLeaderboard();
+}
 
 function optimizeBuildingMaterials() {
     buildings.forEach(building => {
@@ -5088,6 +6360,23 @@ function optimizeBuildingMaterials() {
             }
         }
     });
+}
+
+function startGlobalScorchTimer() {
+    // Don't create multiple timers
+    if (globalScorchTimer) return;
+    
+    // Set up interval to update scorch effects
+    globalScorchTimer = setInterval(() => {
+        // Update ember effects for all scorch marks
+        updateScorchEffects();
+        
+        // Clear timer if no more scorch marks
+        if (scorchMarks.length === 0) {
+            clearInterval(globalScorchTimer);
+            globalScorchTimer = null;
+        }
+    }, globalScorchInterval);
 }
 
 function updatePhysics(timeStep) {
@@ -5125,111 +6414,224 @@ function updatePhysics(timeStep) {
     }
 }
 
-
-
-    function animate(currentTime) {
-    animationFrameId = requestAnimationFrame(animate);
+function initParticlePools() {
+    initGeometryPool();
+    
+    // Pre-create some particles for each pool
+    for (let i = 0; i < 20; i++) {
+        // Smoke particles
+        const smokeGeom = window.geometryPool.plane.clone();
+        const smokeMat = new THREE.MeshBasicMaterial({
+            transparent: true,
+            opacity: 0,
+            depthWrite: false,
+            side: THREE.DoubleSide
+        });
+        const smoke = new THREE.Mesh(smokeGeom, smokeMat);
+        smoke.visible = false;
+        window.particlePool.smoke.push(smoke);
         
-    // First frame initialization
-    if (!lastTime) {
-        lastTime = currentTime;
-        return; // Skip first frame to avoid huge delta
+        // Fire particles
+        const fireGeom = window.geometryPool.plane.clone();
+        const fireMat = new THREE.MeshBasicMaterial({
+            transparent: true,
+            opacity: 0,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+        });
+        const fire = new THREE.Mesh(fireGeom, fireMat);
+        fire.visible = false;
+        window.particlePool.fire.push(fire);
+    }
+}
+
+// Initialize geometry pool
+function initGeometryPool() {
+    window.geometryPool.plane = new THREE.PlaneGeometry(1, 1);
+    window.geometryPool.sphere = new THREE.SphereGeometry(1, 8, 8);
+    window.geometryPool.cylinder = new THREE.CylinderGeometry(1, 1, 1, 8);
+}
+
+
+
+// Get particle from pool or create new
+function getParticleFromPool(type, createFunc) {
+    if (!window.particlePool[type]) {
+        window.particlePool[type] = [];
     }
     
-    // Calculate delta time in seconds with upper limit to avoid large jumps
-    const rawDelta = (currentTime - lastTime) / 1000;
-    const delta = Math.min(rawDelta, 0.05); // Cap at 50ms to prevent extreme jumps
-    lastTime = currentTime;
-
-    // If game is active, update game elements
-    if (gameActive) {
-         // Update player KPM stats
-         updatePlayerStats(delta);
-
-         // Periodically sync to Firebase
-    lastFirebaseSync += delta;
-    if (lastFirebaseSync >= FIREBASE_SYNC_INTERVAL) {
-        syncPlayerStatsToFirebase();
-        lastFirebaseSync = 0; // Reset timer
+    if (window.particlePool[type].length > 0) {
+        const particle = window.particlePool[type].pop();
+        particle.visible = true;
+        return particle;
     }
-        
-        // Update leaderboard every 2 seconds (for performance)
-        if (Math.floor(currentTime / 2000) > Math.floor(lastTime / 2000)) {
-            updateLeaderboard();
-        }
+    
+    // Create new if pool empty
+    return createFunc();
+}
 
-        // Handle launch animation
+// Return particle to pool
+function recycleParticle(particle, type) {
+    const MAX_POOLED_PARTICLES = 100;
+    
+    // Reset properties
+    particle.visible = false;
+    
+    // Return to pool if not too large
+    if (window.particlePool[type] && window.particlePool[type].length < MAX_POOLED_PARTICLES) {
+        window.particlePool[type].push(particle);
+    } else {
+        disposeObject(particle);
+    }
+}
+
+
+function animate(currentTime) {
+    // Skip if essential components aren't ready
+    if (!scene || !camera || !renderer) {
+        console.warn("Essential components not initialized yet");
+        animationFrameId = requestAnimationFrame(animate);
+        return;
+    }
+    
+    // Calculate delta time
+    if (!lastTime) lastTime = currentTime;
+    const delta = Math.min((currentTime - lastTime) / 1000, 0.1); // Cap delta at 0.1
+    lastTime = currentTime;
+    
+    // Update timers for throttled operations
+    minimapTimer += delta;
+    hudTimer += delta;
+    scorchMarksTimer += delta;
+    smokeTimer += delta;
+    
+    // Increment game timers
+    gameTimers.effects += delta;
+    gameTimers.scorchCleanup++;
+    
+    // Update main gameplay
+    if (gameActive) {
+        // Handle gameplay logic
         if (launchAnimation) {
             handleLaunchAnimation(delta);
         } 
-        // Handle reset delay (after crash or target hit)
         else if (resetDelay > 0) {
             handleResetDelay(delta);
         } 
-        // Normal gameplay
         else {
             updateMissile(delta);
             updateCamera(delta);
             checkCollisions();
         }
-        
-          // Update portal ring shader time
-    if (window.portalRings) {
-        const shaderTime = performance.now() * 0.001;
-        window.portalRings.forEach(portal => {
-            if (portal.material.uniforms) {
-                portal.material.uniforms.time.value = shaderTime;
-            }
-        });
     }
-
-        // Update time value for explosion shader animation
+    
+    // Update portal shader times and explosion effects at 60fps
+    if (gameTimers.effects >= 0.016) {
+        // Update shader time for explosion particles
         const shaderTime = performance.now() * 0.001;
         for (let i = 0; i < explosionParticles.length; i++) {
-       const particle = explosionParticles[i];
-       if (particle.material && particle.material.uniforms && particle.material.uniforms.time) {
-        particle.material.uniforms.time.value = shaderTime;
-    }
-}
-
-        // Always update particles and HUD
-        updateParticles(delta);
-        updateHUD();
-
-        // Clean up scorch marks less frequently (every 30 frames)
-        scorchCleanupCounter++;
-        if (scorchCleanupCounter >= 30) {
-            cleanupScorchMarks();
-            scorchCleanupCounter = 0;
+            const particle = explosionParticles[i];
+            if (particle.material && particle.material.uniforms && particle.material.uniforms.time) {
+                particle.material.uniforms.time.value = shaderTime;
+            }
         }
+        gameTimers.effects = 0;
+    }
+
+    // Update particle batches if they exist
+    if (particleBatches && particleBatches.length > 0) {
+        updateParticleBatches(currentTime);
     }
     
-    // Update things
+    // Always update particles and enemies every frame
+    updateParticles(delta);
     updateEnemyMissiles(delta);
-    updateMinimap();
-    updateScorchMarks(delta);
+    
+    // Throttled updates for HUD (15 fps)
+    if (hudTimer >= updateFrequency.HUD) {
+        updateHUD();
+        hudTimer = 0;
+    }
+    
+    // Throttled updates for minimap (20 fps)
+    if (minimapTimer >= updateFrequency.minimap) {
+        updateMinimap();
+        minimapTimer = 0;
+    }
+    
+    // Throttled updates for scorch marks and smoke (5-10 fps)
+    if (scorchMarksTimer >= updateFrequency.scorchMarks) {
+        updateScorchMarks(delta);
+        scorchMarksTimer = 0;
+    }
+    
+    if (smokeTimer >= updateFrequency.smoke) {
+        updateDamagedBuildingsSmoke();
+        smokeTimer = 0;
+    }
+
+    updatePlayerStats(delta); // Update player stats every frame
+    
+    // Clean up scorch marks every 30 frames
+    if (gameTimers.scorchCleanup >= 30) {
+        cleanupScorchMarks();
+        gameTimers.scorchCleanup = 0;
+    }
+    
     updatePhysics(delta);
-    updatePortalMaterials(delta);
     
-    // Apply screen shake directly rather than in separate function
+    // Apply screen shake
     if (screenShakeTime > 0) {
-    const intensity = screenShakeIntensity * screenShakeTime;
-    cameraShakeOffset.set(
-        (Math.random() - 0.5) * intensity,
-        (Math.random() - 0.5) * intensity,
-        (Math.random() - 0.5) * intensity
-    );
-    camera.position.add(cameraShakeOffset);
-    // Then subtract to restore position
-    camera.position.sub(cameraShakeOffset);
+        const intensity = screenShakeIntensity * screenShakeTime;
+        cameraShakeOffset.set(
+            (Math.random() - 0.5) * intensity,
+            (Math.random() - 0.5) * intensity,
+            (Math.random() - 0.5) * intensity
+        );
+        camera.position.add(cameraShakeOffset);
+        camera.position.sub(cameraShakeOffset);
+        
+        screenShakeTime -= delta;
+    }
     
-    screenShakeTime -= delta;
-}
-    
+    // Request next frame
+    animationFrameId = requestAnimationFrame(animate);
+
     // Render the scene
     renderer.render(scene, camera);
 }
 
+function updateParticleBatches(currentTime) {
+    for (let i = particleBatches.length - 1; i >= 0; i--) {
+        const batch = particleBatches[i];
+        const age = currentTime - batch.birthTime;
+        
+        // Update whole batch with one operation
+        if (age > batch.lifespan) {
+            // Remove entire batch
+            if (batch.mesh && batch.mesh.parent) {
+                scene.remove(batch.mesh);
+            }
+            
+            // Dispose resources
+            if (batch.mesh) {
+                if (batch.mesh.geometry) batch.mesh.geometry.dispose();
+                if (batch.mesh.material) batch.mesh.material.dispose();
+            }
+            
+            // Remove from array
+            particleBatches.splice(i, 1);
+        } else {
+            // Update all particles in batch at once
+            if (batch.mesh && batch.mesh.material) {
+                batch.mesh.material.opacity = 1.0 - (age / batch.lifespan);
+                
+                // Optional: Add more batch-wide effects here
+                // For example, scaling the entire mesh or changing color
+            }
+        }
+    }
+}
 
 
 function handleLaunchAnimation(delta) {
@@ -5284,55 +6686,59 @@ function handleLaunchAnimation(delta) {
 }
     
 function handleResetDelay(delta) {
-    // While waiting to reset, keep camera focused on explosion
+    // Decrease reset delay timer
     resetDelay -= delta;
     
-    if (cameraTarget) {
-        // Keep camera focused on explosion point without moving
-        camera.position.lerp(new THREE.Vector3(
-            cameraTarget.x + 10,
-            cameraTarget.y + 15,
-            cameraTarget.z + 10
-        ), delta * 2);
-        camera.lookAt(cameraTarget);
-    }
-    
-    // Reset missile when delay is over
+    // When timer reaches zero or goes negative, reset the missile
     if (resetDelay <= 0) {
-        // Reset camera's up vector to ensure a level view
-        camera.up.set(0, 1, 0);
+        // IMPORTANT: Force resetDelay to be exactly 0 to prevent floating point issues
+        resetDelay = 0;
         
-        // Also reset the vertical reference frame to prevent odd angles
-        camera.userData.verticalReferenceFrame = {
-            forward: new THREE.Vector3(0, 0, 1),
-            right: new THREE.Vector3(1, 0, 0),
-            up: new THREE.Vector3(0, 1, 0)
-        };
-        
-        resetMissile();
-        cameraTarget = null;
-        
-        // SKIP the launch animation - go directly to normal flight
-        launchAnimation = false;
-        
-        // Position camera directly behind missile with proper offset
-        const targetCameraPos = missile.position.clone().sub(
-            missileDirection.clone().multiplyScalar(cameraOffset.z)
-        );
-        targetCameraPos.y += cameraOffset.y;
-        
-        // Set camera position and look target immediately
-        camera.position.copy(targetCameraPos);
-        camera.lookAt(missile.position);
-        
-        // Update smoothed positions to prevent any lingering interpolation
-        smoothedCameraPosition.copy(camera.position);
-        smoothedCameraLookAt.copy(missile.position);
-        
-        // Set velocity to base value
-        velocity = baseVelocity;
-
-        playSound('missile2');
+        // Only reset missile if it's not visible
+        if (!missile.visible) {
+            // Double-check that we're not in a game over state
+            if (gameActive) {
+                console.log("Resetting missile");
+                resetMissile();
+                
+                // Ensure missile is visible
+                missile.visible = true;
+                
+                // Reset any crash handling state
+                if (typeof handleCrash.inProgress !== 'undefined') {
+                    handleCrash.inProgress = false;
+                }
+                
+                // FIXED: Camera position and orientation reset with perfectly level view
+                // Calculate exact camera position behind missile
+                const exactCameraPos = missile.position.clone().sub(
+                    missileDirection.clone().multiplyScalar(cameraOffset.z)
+                );
+                exactCameraPos.y += cameraOffset.y;
+                
+                // Calculate exact look target in front of missile
+                const exactLookTarget = missile.position.clone().add(
+                    missileDirection.clone().multiplyScalar(10)
+                );
+                
+                // Set camera position
+                camera.position.copy(exactCameraPos);
+                
+                // CRITICAL FIX: Explicitly set world-up vector for perfect level orientation
+                camera.up.set(0, 1, 0);
+                
+                // Look at target with the level orientation
+                camera.lookAt(exactLookTarget);
+                
+                // Update smoothed positions to match exactly
+                smoothedCameraPosition.copy(exactCameraPos);
+                smoothedCameraLookAt.copy(exactLookTarget);
+                
+                // Start flight sound for the new missile
+                playSound('missile');
+                startFlightSound();
+            }
+        }
     }
 }
     
