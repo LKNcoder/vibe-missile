@@ -51,7 +51,29 @@
         color: #ff3333;
     }
     
-    
+    #settingsBtn {
+    transition: transform 0.2s, background 0.2s;
+}
+
+#settingsBtn:hover {
+    transform: scale(1.1) rotate(30deg);
+    background: rgba(255, 51, 51, 0.5);
+}
+
+#settingsSaveBtn:hover {
+    background: #ff6666;
+}
+
+#settingsCancelBtn:hover {
+    background: rgba(100, 100, 100, 0.3);
+    color: white;
+}
+
+.settings-color-button:hover {
+    transform: scale(1.2);
+    z-index: 10;
+}
+
     
     /* Add decorative elements to the UI */
     #startMenu:before, #gameOverScreen:before {
@@ -360,12 +382,15 @@
     <!-- Vibe Jam link  -->
     <a target="_blank" href="https://jam.pieter.com" style="font-family: 'system-ui', sans-serif; position: fixed; bottom: -1px; right: -1px; padding: 7px; font-size: 14px; font-weight: bold; background: #fff; color: #000; text-decoration: none; z-index: 10; border-top-left-radius: 12px; z-index: 10000; border: 1px solid #fff;">🕹️ Vibe Jam 2025</a>
 
+    <!-- firebase  -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://unpkg.com/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
 
     <script>
         document.addEventListener('DOMContentLoaded', function() {
@@ -446,13 +471,15 @@
         let lastFirebaseSync = 0;
         const FIREBASE_SYNC_INTERVAL = 10; // Sync every 10 seconds
         let smokeTimer = 0;
-        let particleBatches = []; 
-        let minimapTimer = 0;
-        let hudTimer = 0;
-        let scorchMarksTimer = 0;
+        let gameEndCheckTimer = 0;
+        let playerSmokeTimer = 0;
+        const GAME_END_CHECK_INTERVAL = 2.0;
+        const obstacleCheckDistance = 50;
+        const pathfindingUpdateRate = 0.2;
+        let otherPlayers = {};
+        let lastPositionUpdate = 0;
+        const POSITION_UPDATE_INTERVAL = 100; // ms
 
-        
-        const BATCH_SIZE = 100;
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
         
         const MAX_SMOKE_PARTICLES = isMobile ? 3000 : 10000; 
@@ -467,14 +494,8 @@
         const reusableBox = new THREE.Box3();
         const reusableVec1 = new THREE.Vector3();
         const reusableVec2 = new THREE.Vector3();
-        const minimapDotPool = {
-    target: [],     // Pool for target dots
-    regular: [],    // Pool for regular building dots
-    geometryTarget: new THREE.CircleGeometry(4, 8),   // Reuse geometries
-    geometryRegular: new THREE.CircleGeometry(2, 8),
-    materialTarget: new THREE.MeshBasicMaterial({ color: 0xff0000 }),  // Reuse materials
-    materialRegular: new THREE.MeshBasicMaterial({ color: 0xffffff })
-    };
+        
+    
     const cameraShakeOffset = new THREE.Vector3();
     const missileBackVector = new THREE.Vector3();
 
@@ -566,48 +587,11 @@ const firebaseConfig = {
     apiKey: "AIzaSyAKNrmt5HLrxYjEukNH85e01-eyAsUGvf4",
     authDomain: "vibe-missile.firebaseapp.com",
     projectId: "vibe-missile",
+    databaseURL: "https://vibe-missile-default-rtdb.firebaseio.com",
     storageBucket: "vibe-missile.appspot.com",
     messagingSenderId: "1048243867578",
     appId: "1:1048243867578:web:9c502d5275fcb8a43b5783"
 };
-
-window.geometryPool = {
-    plane: null,
-    sphere: null,
-    cylinder: null
-};
-
-window.materialPool = {
-    smoke: [],
-    fire: [],
-    explosion: [],
-    debris: []
-};
-
-window.particlePool = {
-    smoke: [],
-    fire: [],
-    explosion: []
-};
-
-// Create dot pool for minimap
-window.minimapDotPool = {
-    regular: [],
-    target: [],
-    geometryRegular: null,
-    geometryTarget: null,
-    materialRegular: null,
-    materialTarget: null
-};
-
-// Initialize timing controls
-const updateFrequency = {
-    minimap: 1/20,    // 20 FPS
-    HUD: 1/15,        // 15 FPS
-    scorchMarks: 1/5, // 5 FPS
-    smoke: 1/10       // 10 FPS
-};
-
 
 
 // Generate a unique player ID
@@ -890,33 +874,13 @@ function handleTouchEnd(e) {
  init();
 
  // 1. Remove the startMenu display toggle in init()
- function init() {
-    // Set timestamp to track game start (for blocking unwanted explosions)
-    window.gameStartTime = Date.now();
-    console.log("Starting game initialization");
-
-    // Cleanup any existing particles/resources
-    cleanupAllParticleSystems();
-
-    // Initialize empty particle arrays
-    smokeParticles = [];
-    explosionParticles = [];
-    particleBatches = [];
-    damagedBuildings = [];
-    scorchMarks = [];
-
-    // Prevent automatic effects during startup
-    window.autoEffectsDisabled = true;
-    
-    // Initialize geometry and particle pools
-    initGeometryPool();
-    initParticlePools();
-
+function init() {
     // Initialize sounds
     initSounds();
     initSoundPool();
+    initializeSettingsPanel();
 
-    // Mobile optimizations
+    // optimize for mobile
     if (isMobile) {
         optimizeForMobile();
         console.log("Mobile optimizations applied");
@@ -926,13 +890,14 @@ function handleTouchEnd(e) {
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x87CEEB);  // Sky blue
     scene.fog = new THREE.FogExp2(0x87CEEB, 0.0015);
+
     THREE.Object3D.DefaultUp.set(0, 1, 0);
 
-    // Set up the renderer with optimal settings
+    // Set up the renderer
     renderer = new THREE.WebGLRenderer({ 
         antialias: true,
-        powerPreference: "high-performance", 
-        precision: "mediump" 
+        powerPreference: "high-performance", // Request high-performance GPU
+        precision: "mediump" // Use medium precision shaders on mobile
     });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.shadowMap.enabled = false;
@@ -943,19 +908,21 @@ function handleTouchEnd(e) {
     const ambientLight = new THREE.AmbientLight(0x404040, 1);
     scene.add(ambientLight);
 
-    // Directional light setup
+    // Improve directional light for better shadows
     const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
     directionalLight.position.set(200, 300, 100);
     directionalLight.castShadow = false;
+    
+    // Increase shadow map size for more detailed shadows
     directionalLight.shadow.mapSize.width = 1024;
     directionalLight.shadow.mapSize.height = 1024;
+    
+    // Add shadow bias to reduce shadow acne
     directionalLight.shadow.bias = -0.001;
-    scene.add(directionalLight);
 
-    // Camera setup
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
     
-    // Initialize camera reference frame immediately
+    // Initialize camera reference frame IMMEDIATELY after creating the camera
     camera.userData = {
         verticalReferenceFrame: {
             forward: new THREE.Vector3(0, 0, -1),
@@ -967,58 +934,80 @@ function handleTouchEnd(e) {
     // Define smoothedCameraPosition and smoothedCameraLookAt
     smoothedCameraPosition = new THREE.Vector3();
     smoothedCameraLookAt = new THREE.Vector3();
-    ensureCameraReferences();
 
-    // Initialize enemy pilots
-    initializeEnemyPilots();
+     // Safely initialize camera references
+     ensureCameraReferences();
+
+    
+    scene.add(directionalLight);
+
+    initializeEnemyPilots(); // Initialize enemy pilots
 
     // Create the terrain
     createTerrain();
        
-    // Create the city with buildings
+    // Create the city
     createCity();
-    
-    // Create the missile (player object)
-    createMissile();
-    
-    // Add portal rings at a safe point after core components are ready
-    setTimeout(() => {
-        createPortalRings();
-    }, 500);
 
-    // Set up the minimap after city is created
+    createPortalRings(); // Create portal rings
+    
+    // Set up the minimap
     setupMinimap();
 
-    // Initialize leaderboard and UI components
-    createLeaderboard();
-    setTimeout(updateLeaderboard, 500);
+    createLeaderboard(); // Create leaderboard
+    setTimeout(updateLeaderboard, 500); // Force update soon after start
+ 
+    // Create the missile
+    createMissile();
 
-    // Initialize explosion materials
-    initExplosionTextures();
-    initEnemyExplosionMaterials();
+    initExplosionTextures(); // Initialize explosion textures once
+    initEnemyExplosionMaterials(); // Initialize enemy explosion materials
     
-    // Set up event listeners
+    // Event listeners
     window.addEventListener('resize', onWindowResize);
     document.addEventListener('keydown', onKeyDown);
     document.addEventListener('keyup', onKeyUp);
+
+    enhancePlayerInitialization() // Initialize player stats
     
     // Mobile device orientation controls
     if (window.DeviceOrientationEvent) {
         window.addEventListener('deviceorientation', handleDeviceOrientation);
     }
 
-    // Initialize game state
+    if (isMobile) {
+        optimizeForMobile();
+        
+        // Replace standard control instructions
+        if (document.getElementById('controlsOverlay')) {
+            document.getElementById('controlsOverlay').innerHTML = 
+                'TILT DEVICE TO STEER • TAP SCREEN TO ACCELERATE';
+        }
+        
+        // Set up mobile-specific game properties
+        baseVelocity = 0.5; // Slower base speed for easier control
+        turnSpeed *= 0.8; // Gentler turns
+        damping = 0.8; // More damping for smoother controls
+        
+        // Disable or simplify heavy effects
+        MAX_SMOKE_PARTICLES = 2000;
+        MAX_EXPLOSION_PARTICLES = 5000;
+    }
+    
+     
+    
+    // Initialize game directly - no start menu
     document.getElementById('hud').style.display = 'block';
     document.getElementById('minimap').style.display = 'block';
     createHudElements();
     gameActive = true;
     resetMissile();
     
-    // Skip launch animation for immediate gameplay
+    // Skip launch animation
     launchAnimation = false;
     velocity = baseVelocity;
     
-    // Set up immediate camera position
+    // Set up camera position immediately
     const cameraPos = missile.position.clone().sub(
         missileDirection.clone().multiplyScalar(cameraOffset.z)
     );
@@ -1028,23 +1017,30 @@ function handleTouchEnd(e) {
     smoothedCameraPosition.copy(camera.position);
     smoothedCameraLookAt.copy(missile.position);
     
-    // Show controls briefly
-    document.getElementById('controlsOverlay').innerHTML = isMobile ? 
-        'TILT DEVICE TO STEER • TAP SCREEN TO ACCELERATE' :
-        'USE ARROW KEYS TO MANEUVER • SPACE TO ACCELERATE';
+    // Show controls briefly to inform player
+    document.getElementById('controlsOverlay').innerHTML = 'USE ARROW KEYS TO MANEUVER • SPACE TO ACCELERATE';
     showControlsOverlay();
     
     // Start sounds
     playSound('missile');
     startFlightSound();
 
-    // WebGL error handling
     renderer.domElement.addEventListener('webglcontextlost', function(event) {
         event.preventDefault();
         console.error('WebGL context lost. Attempting recovery...');
-        
+       
         // Clean up resources to help recovery
-        cleanupAllParticleSystems();
+        for (let i = smokeParticles.length - 1; i >= 0; i--) {
+            disposeObject(smokeParticles[i]);
+        }
+        smokeParticles = [];
+        
+        for (let i = explosionParticles.length - 1; i >= 0; i--) {
+            disposeObject(explosionParticles[i]);
+        }
+        explosionParticles = [];
+        
+        // Alert user
         alert("Graphics context lost. Try refreshing the page.");
     }, false);
 
@@ -1054,48 +1050,252 @@ function handleTouchEnd(e) {
         requestAnimationFrame(animate);
     }, false);
 
-    // Initialize Firebase for multiplayer features
-    initFirebase();
-    
-    // Safely initialize portals without unwanted effects
-    initPortals();
+    initPortals(); // Initialize portals
 
-    // Add performance diagnostics
-    if (renderer && renderer.info) {
-        console.log("Initial memory usage:", {
-            geometries: renderer.info.memory.geometries,
-            textures: renderer.info.memory.textures
-        });
-    }
+    initFirebase(); // Initialize Firebase
 
-    // Re-enable automatic effects after a delay
-    setTimeout(() => { 
-        window.autoEffectsDisabled = false; 
-        console.log("Automatic effects enabled");
-    }, 2000);
-    
-    // Reset timers
-    lastTime = 0;
-    minimapTimer = 0;
-    hudTimer = 0;
-    scorchMarksTimer = 0;
-    smokeTimer = 0;
-    
+    addDummyPlayers(); // Add dummy players for testing
+
     // Start animation loop
+    lastTime = 0; // Reset lastTime
     requestAnimationFrame(animate);
-    
-    console.log("Game initialization complete");
-}
+}    
 
 function initPortals() {
     // Handle incoming portal parameters
     handleIncomingPortal();
+    
+    // Update materials for portal animation
+    updatePortalMaterials();
 }
+
+function setupMultiplayerSync() {
+    // Skip if already initialized
+    if (window.multiplayerSyncInitialized) {
+        console.log("Multiplayer sync already initialized");
+        return;
+    }
+    
+    console.log("Setting up multiplayer sync...");
+
+    // First, clean up any existing other players to start fresh
+    cleanupAllOtherPlayerMissiles();
+    
+    try {
+        // Check for required components
+        if (!db) {
+            console.error("Firestore not initialized - cannot setup multiplayer sync");
+            return;
+        }
+        
+        if (!firebase.auth().currentUser) {
+            console.error("User not authenticated - cannot setup multiplayer sync");
+            return;
+        }
+        
+        // Reference to active players collection - THIS IS THE KEY TO SHARED EXPERIENCE
+        // All players must be in the same collection
+        const activePlayers = db.collection("activePlayers");
+        
+        // Get current player ID
+        const playerId = playerStats.id;
+        const playerRef = activePlayers.doc(playerId);
+        
+        // Initial player data
+        const playerData = {
+            name: playerStats.name,
+            color: playerStats.color,
+            position: { 
+                x: missile.position.x, 
+                y: missile.position.y, 
+                z: missile.position.z 
+            },
+            rotation: { 
+                x: missile.rotation.x,
+                y: missile.rotation.y,
+                z: missile.rotation.z
+            },
+            direction: { 
+                x: missileDirection.x, 
+                y: missileDirection.y, 
+                z: missileDirection.z 
+            },
+            lastUpdated: firebase.firestore.FieldValue.serverTimestamp(),
+            isAccelerating: false
+        };
+        
+        // Create or update player entry
+        playerRef.set(playerData, { merge: true })
+            .then(() => {
+                console.log("Joined multiplayer session as:", playerStats.name);
+                
+                // Set up presence detection for cleanup when player disconnects
+                setupPlayerPresence(playerRef);
+                
+                // Start position sync
+                startPositionSync(playerRef);
+                
+                // Mark as initialized
+                window.multiplayerSyncInitialized = true;
+            })
+            .catch(error => {
+                console.error("Error joining multiplayer:", error);
+            });
+        
+        // Listen for other players
+        listenForOtherPlayers(activePlayers);
+        
+    } catch (error) {
+        console.error("Error setting up multiplayer:", error);
+    }
+}
+
+// New function to clean up stale Firebase player entries
+function cleanupStaleFirebasePlayers() {
+    if (!db || !firebase.auth().currentUser) {
+        console.log("Firebase not available, skipping stale player cleanup");
+        return;
+    }
+    
+    // Get reference to active players
+    const activePlayers = db.collection("activePlayers");
+    
+    // Set threshold for stale entries (e.g., 5 minutes ago)
+    const staleThreshold = new Date();
+    staleThreshold.setMinutes(staleThreshold.getMinutes() - 5);
+    
+    // Find and delete stale entries
+    activePlayers.where("lastUpdated", "<", staleThreshold)
+        .get()
+        .then((snapshot) => {
+            if (snapshot.empty) {
+                console.log("No stale player entries found");
+                return;
+            }
+            
+            console.log(`Found ${snapshot.size} stale player entries to clean up`);
+            
+            // Batch delete all stale entries
+            const batch = db.batch();
+            snapshot.forEach((doc) => {
+                console.log(`Cleaning up stale player: ${doc.id}`);
+                batch.delete(doc.ref);
+            });
+            
+            // Commit the batch delete
+            return batch.commit();
+        })
+        .then(() => {
+            console.log("Stale player cleanup complete");
+        })
+        .catch((error) => {
+            console.error("Error cleaning up stale players:", error);
+        });
+}
+
+//firebase powerwash
+function cleanupAllOtherPlayerMissiles() {
+    console.log("Cleaning up all other player missiles");
+    
+    // Make a copy of keys to avoid modification during iteration
+    const playerIds = Object.keys(otherPlayers);
+    
+    // Clear each player's missile
+    playerIds.forEach(playerId => {
+        removeOtherPlayer(playerId);
+    });
+    
+    // Clear the otherPlayers object completely to ensure fresh start
+    otherPlayers = {};
+    
+    // Update UI
+    updatePlayerCountUI();
+    updateLeaderboard();
+    
+    // Also remove any stale entries from Firebase
+    cleanupStaleFirebasePlayers();
+}
+
 
 function optimizeForMobile() {
     if (!isMobile) return;
     
-    // Set up simple touch controls
+    // 1. Fix the viewport meta tag dynamically
+    let viewportMeta = document.querySelector('meta[name="viewport"]');
+    if (!viewportMeta) {
+        viewportMeta = document.createElement('meta');
+        viewportMeta.name = 'viewport';
+        document.head.appendChild(viewportMeta);
+    }
+    viewportMeta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
+    
+    // 2. Apply fullscreen styles for better mobile display
+    const style = document.createElement('style');
+    style.textContent = `
+        html, body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            position: fixed;
+        }
+        canvas {
+            display: block;
+            width: 100% !important;
+            height: 100% !important;
+            position: fixed;
+            top: 0;
+            left: 0;
+        }
+        #fullscreenBtn {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            padding: 8px 12px;
+            background: rgba(0,0,0,0.5);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            z-index: 10000;
+        }
+    `;
+    document.head.appendChild(style);
+    
+    // 3. Add fullscreen button for mobile
+    const fullscreenBtn = document.createElement('button');
+    fullscreenBtn.id = 'fullscreenBtn';
+    fullscreenBtn.innerHTML = '⛶ Full Screen';
+    fullscreenBtn.addEventListener('click', () => {
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch(e => {
+                console.error('Fullscreen error:', e);
+            });
+            fullscreenBtn.innerHTML = '✕ Exit';
+        } else {
+            if (document.exitFullscreen) {
+                document.exitFullscreen();
+                fullscreenBtn.innerHTML = '⛶ Full Screen';
+            }
+        }
+    });
+    document.body.appendChild(fullscreenBtn);
+    
+    // 4. Force renderer to use correct size
+    function resizeGame() {
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+    }
+    
+    // Initial sizing and listen for orientation changes
+    resizeGame();
+    window.addEventListener('resize', resizeGame);
+    window.addEventListener('orientationchange', () => {
+        setTimeout(resizeGame, 100);
+    });
+    
+    // 5. Keep existing touch controls setup
     renderer.domElement.addEventListener('touchstart', function(e) {
         e.preventDefault();
         isAccelerating = true;
@@ -1108,15 +1308,15 @@ function optimizeForMobile() {
         updateFlightSound(false);
     }, { passive: false });
     
-    // Simple device orientation setup - no permission buttons
+    // 6. Setup device orientation controls
     if (window.DeviceOrientationEvent) {
         window.addEventListener('deviceorientation', handleDeviceOrientation);
     }
     
-    // Simple controls overlay
+    // 7. Show mobile-specific instructions
     setTimeout(() => {
         document.getElementById('controlsOverlay').innerHTML = 
-            'TILT TO STEER • TAP TO ACCELERATE';
+            'TILT DEVICE TO STEER • TAP SCREEN TO ACCELERATE';
         document.getElementById('controlsOverlay').style.opacity = '1';
         
         setTimeout(() => {
@@ -1125,29 +1325,196 @@ function optimizeForMobile() {
     }, 1000);
 }
 
-function initFirebase() {
-    // Initialize Firebase
-    firebase.initializeApp(firebaseConfig);
-    db = firebase.firestore();
+function enhancePlayerInitialization() {
+  // NATO phonetic alphabet names
+  const natoNames = [
+    "Alpha", "Bravo", "Charlie", "Delta", "Echo", 
+    "Foxtrot", "Golf", "Hotel", "India", "Juliet", 
+    "Kilo", "Lima", "Mike", "November", "Oscar", 
+    "Papa", "Quebec", "Romeo", "Sierra", "Tango", 
+    "Uniform", "Victor", "Whiskey", "X-ray", "Yankee", "Zulu"
+  ];
+  
+  // Check if player came through portal (already has a name)
+  if (!playerStats.name || playerStats.name === "You") {
+    // Get random name from NATO phonetic alphabet
+    const randomNameIndex = Math.floor(Math.random() * natoNames.length);
+    const randomNumber = Math.floor(Math.random() * 99) + 1;
+    playerStats.name = `${natoNames[randomNameIndex]}-${randomNumber}`;
+  }
+  
+  // Randomize missile color if not already set
+  if (!playerStats.color || playerStats.color === "#5c5c5c") {
+    // Generate a visually distinct random color
+    const hue = Math.floor(Math.random() * 360);
+    const saturation = Math.floor(Math.random() * 30) + 70; // 70-100%
+    const lightness = Math.floor(Math.random() * 20) + 40;  // 40-60%
+    playerStats.color = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
     
-    // Initialize anonymous authentication
-    firebase.auth().signInAnonymously().catch(error => {
-        console.error("Authentication error:", error);
-    });
+    // Apply the color to player's missile
+    if (missile && missile.children && missile.children[0]) {
+      missile.children[0].material.color.set(playerStats.color);
+    }
+    updatePlayerMarkerColor();
+
+  }
+  
+  // Make sure firebase ID is set
+  playerStats.id = playerStats.id || generatePlayerId();
+  
+  console.log(`Player initialized: ${playerStats.name} with color ${playerStats.color}`);
+}
+
+function startPositionSync(playerRef) {
+    console.log("Starting position sync...");
     
-    // Set up auth state change listener
-    firebase.auth().onAuthStateChanged(user => {
-        if (user) {
-            // User is signed in, set up their player ID
-            playerStats.firebaseId = user.uid;
-            
-            // Fetch existing player data if returning user
-            fetchPlayerData(user.uid);
-            
-            // Start listening to leaderboard updates
-            subscribeToLeaderboard();
+    // Clear any existing interval to prevent duplicates
+    if (window.positionSyncInterval) {
+        clearInterval(window.positionSyncInterval);
+        window.positionSyncInterval = null;
+    }
+    
+    // Set up interval to update position data
+    const syncInterval = setInterval(() => {
+        // Only sync if game is active and missile exists
+        if (!gameActive || !missile || !missile.visible) return;
+        
+        try {
+            // Update player position in Firebase
+            playerRef.update({
+                position: {
+                    x: missile.position.x,
+                    y: missile.position.y,
+                    z: missile.position.z
+                },
+                direction: {
+                    x: missileDirection.x,
+                    y: missileDirection.y,
+                    z: missileDirection.z
+                },
+                isAccelerating: isAccelerating,
+                lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+            }).then(() => {
+                // Position update successful
+                // We could log this but it would spam the console
+            }).catch(error => {
+                console.error("Error updating position:", error);
+            });
+        } catch (error) {
+            console.error("Error in position sync:", error);
         }
-    });
+    }, 100); // Update 10 times per second
+    
+    // Store interval reference to clear it later if needed
+    window.positionSyncInterval = syncInterval;
+}
+
+function initFirebase() {
+    console.log("Initializing Firebase...");
+    
+    // First check if Firebase is available
+    if (typeof firebase === 'undefined') {
+        console.error("Firebase SDK not loaded! Make sure scripts are loaded correctly.");
+        alert("Firebase initialization failed: Firebase SDK is not available");
+        return false;
+    }
+    
+    try {
+        // Check if Firebase is already initialized
+        if (firebase.apps.length) {
+            console.log("Firebase already initialized, using existing instance");
+            db = firebase.firestore();
+            window.firebaseDB = firebase.database();
+        } else {
+            // Log the config we're using (without sensitive data)
+            console.log("Firebase config:", {
+                authDomain: firebaseConfig.authDomain,
+                projectId: firebaseConfig.projectId,
+                databaseURL: firebaseConfig.databaseURL || "NOT SET - THIS IS REQUIRED"
+            });
+            
+            // Initialize Firebase
+            firebase.initializeApp(firebaseConfig);
+            console.log("Firebase app initialized");
+            
+            // Initialize Firestore with error handling
+            try {
+                db = firebase.firestore();
+                console.log("Firestore initialized successfully");
+            } catch (firestoreError) {
+                console.error("Firestore initialization error:", firestoreError);
+            }
+            
+            // Initialize Realtime Database with error handling
+            try {
+                window.firebaseDB = firebase.database();
+                console.log("Realtime Database initialized successfully");
+            } catch (dbError) {
+                console.error("Realtime Database initialization error:", dbError);
+            }
+        }
+        
+        // Check if auth is available before attempting to use it
+        if (!firebase.auth) {
+            console.error("Firebase Auth not available. Check script loading.");
+            alert("Firebase Auth not available. Check script loading.");
+            return false;
+        }
+        
+        // Sign in anonymously with improved error handling
+        console.log("Attempting anonymous authentication...");
+        firebase.auth().signInAnonymously()
+            .then(() => {
+                console.log("Anonymous authentication request successful");
+            })
+            .catch(error => {
+                console.error("Authentication error:", error.code, error.message);
+                
+                // Show more detailed error
+                let errorMessage = "Authentication failed: ";
+                switch(error.code) {
+                    case 'auth/operation-not-allowed':
+                        errorMessage += "Anonymous auth not enabled in Firebase console.";
+                        break;
+                    case 'auth/web-storage-unsupported':
+                        errorMessage += "Web storage is not supported or disabled.";
+                        break;
+                    case 'auth/configuration-not-found':
+                        errorMessage += "Firebase configuration is incomplete or incorrect. Make sure databaseURL is set.";
+                        break;
+                    default:
+                        errorMessage += error.message;
+                }
+                console.error(errorMessage);
+                alert(errorMessage);
+            });
+        
+        // Auth state listener remains the same
+        firebase.auth().onAuthStateChanged(user => {
+            if (user) {
+                console.log("User signed in successfully. User ID:", user.uid);
+                playerStats.firebaseId = user.uid;
+                playerStats.id = user.uid;
+                
+                // Now that authentication is confirmed successful, set up multiplayer
+                setTimeout(() => {
+                    console.log("Setting up multiplayer connections now that auth is successful");
+                    onPlayerAuthenticated();
+                    fetchPlayerData(user.uid);
+                    subscribeToLeaderboard();
+                    setupMultiplayerSync(); // Explicitly call this here
+                }, 500); // Short delay to ensure auth is fully processed
+            } else {
+                console.log("User signed out or auth state changed to unauthenticated");
+            }
+        });
+        
+        return true; // Successful initialization
+    } catch (error) {
+        console.error("Firebase critical initialization error:", error);
+        alert("Firebase initialization failed: " + error.message);
+        return false;
+    }
 }
 
 // Fetch existing player data if they've played before
@@ -1156,8 +1523,10 @@ function fetchPlayerData(userId) {
         if (doc.exists) {
             const data = doc.data();
             
-            // Only update name if we don't have a specified one (from portal)
-            if (!playerStats.name.startsWith("Player from portal")) {
+            // MODIFIED: Only update name if we don't already have a custom name set
+            // (NATO names or portal names should be preserved)
+            if ((playerStats.name === "You" || !playerStats.name) && 
+                !playerStats.name.includes("-")) {  // NATO names contain hyphens
                 playerStats.name = data.name;
             }
             
@@ -1165,14 +1534,19 @@ function fetchPlayerData(userId) {
             playerStats.allTimeTargetsDestroyed = data.allTimeTargetsDestroyed || 0;
             playerStats.totalPlayTimeSeconds = data.totalPlayTimeSeconds || 0;
             
-            // If they have a color, use it
-            if (data.color) {
+            // MODIFIED: Only apply color from Firebase if we don't already have a valid color
+            // (This prevents overriding the initial random color)
+            if (data.color && (!playerStats.color || playerStats.color === "#5c5c5c")) {
                 playerStats.color = data.color;
                 
                 // Apply color to missile
                 if (missile && missile.children && missile.children[0]) {
                     missile.children[0].material.color.set(data.color);
                 }
+                updatePlayerMarkerColor();
+            } else {
+                // Make sure we save the current color to Firebase instead
+                updatePlayerInFirebase();
             }
         } else {
             // First time player, create their record
@@ -1948,10 +2322,6 @@ function createMissile() {
 }
 
 function setupMinimap() {
-    // Initialize the arrays for minimap dots
-    minimapDotPool.target = [];
-    minimapDotPool.regular = [];
-
     // Get the parent element
     const minimapParent = document.getElementById('minimap');
     minimapParent.innerHTML = '';
@@ -2003,18 +2373,9 @@ function setupMinimap() {
     const cityPlane = new THREE.Mesh(cityPlaneGeometry, cityPlaneMaterial);
     cityPlane.rotation.x = -Math.PI / 2;
     minimapScene.add(cityPlane);
-    
-    // Initialize building dot pool materials and geometries
-    const regularDotRadius = 1.2;
-    const targetDotRadius = 1.5;
-    
-    // Create shared geometries
-    minimapDotPool.geometryRegular = new THREE.PlaneGeometry(6, 6); // Much bigger squares (10x)
-    minimapDotPool.geometryTarget = new THREE.PlaneGeometry(8, 8);  // Much bigger squares (10x)
-    
-    // Create shared materials
-    minimapDotPool.materialRegular = new THREE.MeshBasicMaterial({color: 0xffffff});
-    minimapDotPool.materialTarget = new THREE.MeshBasicMaterial({color: 0xff0000});
+
+    // Initialize square building markers for minimap
+    initializeMinimapMarkers();
     
     // IMPORTANT: Create player marker mesh
     const playerMarkerSize = 10;
@@ -2024,6 +2385,8 @@ function setupMinimap() {
     playerTriangleShape.lineTo(playerMarkerSize * 0.6, playerMarkerSize * 0.5);
     playerTriangleShape.lineTo(0, -playerMarkerSize);
 
+
+    
     const playerTriangleGeometry = new THREE.ShapeGeometry(playerTriangleShape);
     
     // Use player's color or default gray
@@ -2046,12 +2409,46 @@ function setupMinimap() {
     
     // Add player marker to the scene
     minimapScene.add(playerMarker);
-    minimapBuildingDots = []; // Initialize empty array
     
     // Add compass indicator
     addMinimapCompass();
 }
 
+function initializeMinimapMarkers() {
+    // Create pools for building markers on minimap
+    if (!window.minimapDotPool) {
+        window.minimapDotPool = {
+            target: [],
+            regular: [],
+            // Square geometries instead of circles
+            geometryTarget: new THREE.PlaneGeometry(8, 8), // Larger size for targets (was ~3-4)
+            geometryRegular: new THREE.PlaneGeometry(6, 6), // Larger size for regular buildings (was ~2-3)
+            materialTarget: new THREE.MeshBasicMaterial({
+                color: 0xff3333, // Red for targets
+                side: THREE.DoubleSide
+            }),
+            materialRegular: new THREE.MeshBasicMaterial({
+                color: 0xaaaaaa, // Gray for regular buildings
+                side: THREE.DoubleSide
+            })
+        };
+    }
+
+    // Initialize empty arrays if not existing
+    window.minimapBuildingDots = window.minimapBuildingDots || [];
+}
+
+function updatePlayerMarkerColor() {
+  // Only proceed if we have both the player marker and a valid color
+  if (playerMarker && playerStats.color) {
+    // Update the marker material color
+    if (playerMarker.material) {
+      playerMarker.material.color.set(playerStats.color);
+    }
+    
+    console.log(`Updated player marker color to ${playerStats.color}`);
+  }
+}
 
 
 function addMinimapCompass() {
@@ -2091,6 +2488,34 @@ function addMinimapCompass() {
     });
 }
 
+// Update the updateMinimap 
+function updateMinimap() {
+    if (!gameActive) return;
+    
+    // Always rotate the container with fixed rotation
+    if (minimapContainer && typeof minimapFixedRotation !== 'undefined') {
+        minimapContainer.style.transform = `rotate(${-minimapFixedRotation}rad)`;
+    }
+    
+    // Update player marker position and rotation using THREE.js (like enemy markers)
+    if (playerMarker && missile && missile.position && missileDirection) {
+        // Update position
+        playerMarker.position.x = missile.position.x;
+        playerMarker.position.z = missile.position.z;
+        
+        // Update rotation
+        const angle = Math.atan2(missileDirection.x, -missileDirection.z);
+        playerMarker.rotation.set(Math.PI / 2, 0, angle);
+    }
+    
+    // Update and render
+    updateMinimapBuildings();
+    updateEnemyMinimapMarkers();
+    
+    if (minimapRenderer && minimapScene && minimapCamera) {
+        minimapRenderer.render(minimapScene, minimapCamera);
+    }
+}
 
 // New function to update enemy missile markers on the minimap
 function updateEnemyMinimapMarkers() {
@@ -2185,64 +2610,6 @@ function getCardinalDirection(direction) {
     
     return "N/A"; // Fallback
 }
-
-function createParticleBatch(count, position, options = {}) {
-    // Default options
-    const settings = {
-        size: options.size || 1.0,
-        lifespan: options.lifespan || 3.0,
-        color: options.color || 0xffffff,
-        spread: options.spread || 5.0,
-        texture: options.texture || null
-    };
-    
-    // Create geometry for all particles at once
-    const geometry = new THREE.PlaneGeometry(1, 1);
-    
-    // Create material with shared texture
-    const material = new THREE.MeshBasicMaterial({
-        map: settings.texture,
-        transparent: true,
-        depthWrite: false,
-        side: THREE.DoubleSide,
-        color: new THREE.Color(settings.color)
-    });
-    
-    // Create the instanced mesh with proper arguments
-    const instancedMesh = new THREE.InstancedMesh(geometry, material, count);
-    
-    // Position and scale each instance
-    for (let i = 0; i < count; i++) {
-        const matrix = new THREE.Matrix4();
-        
-        // Random position within spread
-        const x = position.x + (Math.random() * 2 - 1) * settings.spread;
-        const y = position.y + (Math.random() * 2 - 1) * settings.spread;
-        const z = position.z + (Math.random() * 2 - 1) * settings.spread;
-        
-        // Random scale variation
-        const scale = settings.size * (0.7 + Math.random() * 0.6);
-        
-        // Apply transform
-        matrix.makeScale(scale, scale, scale);
-        matrix.setPosition(x, y, z);
-        
-        instancedMesh.setMatrixAt(i, matrix);
-    }
-    
-    instancedMesh.instanceMatrix.needsUpdate = true;
-    scene.add(instancedMesh);
-    
-    // Track batch
-    particleBatches.push({
-        mesh: instancedMesh,
-        birthTime: performance.now(),
-        lifespan: settings.lifespan
-    });
-    
-    return instancedMesh;
-}
-
 
 function createPortalRings() {
     // Portal ring properties
@@ -2368,7 +2735,6 @@ function createPortalRings() {
     });
 
 }
-    
 
 function createPortalLabel(portal, mainText, subText) {
     // Create canvas for text
@@ -2471,7 +2837,8 @@ function checkPortalCollisions() {
                 if (distInRing < portal.geometry.parameters.radius - 5) {
                     console.log(`Entered ${portal.userData.destination} portal in ${portal.userData.direction} direction!`);
                     
-                   
+                    // Create transition effect
+                    createPortalTransitionEffect(portal);
                     
                     // Navigate to destination
                     navigateToPortalDestination(portal);
@@ -2485,7 +2852,26 @@ function checkPortalCollisions() {
     return false;
 }
 
-
+// Create visual effect for portal transition
+function createPortalTransitionEffect(portal) {
+    const flash = document.createElement('div');
+    flash.style.position = 'fixed';
+    flash.style.top = '0';
+    flash.style.left = '0';
+    flash.style.width = '100%';
+    flash.style.height = '100%';
+    flash.style.backgroundColor = portal.userData.destination === 'next' ? '#00ff77' : '#3366ff';
+    flash.style.opacity = '0';
+    flash.style.transition = 'opacity 0.8s';
+    flash.style.pointerEvents = 'none';
+    flash.style.zIndex = '1000';
+    document.body.appendChild(flash);
+    
+    // Fade in
+    setTimeout(() => {
+        flash.style.opacity = '0.6';
+    }, 10);
+}
 
 // Navigate to portal destination
 function navigateToPortalDestination(portal) {
@@ -2515,7 +2901,9 @@ function navigateToPortalDestination(portal) {
         ? `${destinationUrl}&${params.toString()}`
         : `${destinationUrl}?${params.toString()}`;
 
-      
+        // Create visual effect for transition
+    createPortalTransitionEffect(portal);
+    
     // Pause the game
     gameActive = false;
     
@@ -2555,14 +2943,16 @@ function handleIncomingPortal() {
         if (urlParams.get('speed')) {
             const incomingSpeed = parseFloat(urlParams.get('speed'));
             if (!isNaN(incomingSpeed)) {
+                // Map the incoming speed to our game's velocity scale
                 velocity = Math.max(baseVelocity, Math.min(maxVelocity, incomingSpeed / 20));
             }
         }
         
-        // Skip start menu, go directly to game
-        gameActive = true;
+         // Skip start menu, go directly to game
+         gameActive = true;
         
-       
+        // Show welcome message
+        showPortalWelcomeMessage();
     }
 }
 
@@ -2652,163 +3042,119 @@ function resetMissile() {
     // The key is to let the smoothing system handle the transition naturally
 }
         
-    /*    
-function createFireAndSmoke() {
-    // Check if we're at the particle limit
-    if (smokeParticles.length > MAX_SMOKE_PARTICLES * 0.9) return;
-    
-    // Create shared textures if they don't exist
-    if (!window.fireTexture) {
-        const canvas = document.createElement('canvas');
-        canvas.width = 64;
-        canvas.height = 64;
-        const ctx = canvas.getContext('2d');
-        
-        // Create radial gradient for fire effect
-        const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
-        gradient.addColorStop(0, 'rgba(255, 255, 180, 1.0)'); // Bright center
-        gradient.addColorStop(0.2, 'rgba(255, 160, 50, 0.9)'); // Orange middle
-        gradient.addColorStop(0.6, 'rgba(255, 60, 10, 0.5)'); // Red edge
-        gradient.addColorStop(1, 'rgba(255, 0, 0, 0)'); // Transparent edge
-        
-        ctx.fillStyle = gradient;
-        ctx.fillRect(0, 0, 64, 64);
-        
-        window.fireTexture = new THREE.CanvasTexture(canvas);
-    }
-    
-    // Reuse geometry for all fire particles
-    if (!window.fireGeometry) {
-        window.fireGeometry = new THREE.PlaneGeometry(1, 1);
-    }
-    
-    // Create minimal number of particles based on acceleration
-    const fireCount = isAccelerating ? 3 : 1;
-    const smokeCount = isAccelerating ? 0 : 1; // Less smoke when accelerating
-    
-    // Timer-based checks like enemy missiles
-    if (!window.lastFireCreationTime) window.lastFireCreationTime = 0;
-    const now = Date.now();
-    const timeSinceLastFire = (now - window.lastFireCreationTime) / 1000;
-    const fireInterval = isAccelerating ? 0.03 : 0.08;
-    
-    // Only create fire on intervals
-    if (timeSinceLastFire >= fireInterval) {
-        window.lastFireCreationTime = now;
-        
-        // Create fire particles
-        for (let i = 0; i < fireCount; i++) {
-            const fireSize = isAccelerating ? 
-                THREE.MathUtils.randFloat(1.0, 2.0) : 
-                THREE.MathUtils.randFloat(0.6, 1.2);
-            
-            // Reuse material from pool if possible
-            let fireMaterial;
-            const colorRandom = Math.random();
-            const fireColor = colorRandom < 0.3 ? 
-                0xffff00 : (colorRandom < 0.7 ? 0xff5500 : 0xff2200);
-                
-            if (!window.fireMaterialPool) window.fireMaterialPool = [];
-            
-            if (window.fireMaterialPool.length > 0) {
-                fireMaterial = window.fireMaterialPool.pop();
-                fireMaterial.color.setHex(fireColor);
-                fireMaterial.opacity = THREE.MathUtils.randFloat(0.7, 1.0);
-            } else {
-                fireMaterial = new THREE.MeshBasicMaterial({
-                    map: window.fireTexture,
-                    color: fireColor,
-                    transparent: true,
-                    blending: THREE.AdditiveBlending,
-                    opacity: THREE.MathUtils.randFloat(0.7, 1.0),
-                    depthWrite: false,
-                    side: THREE.DoubleSide
-                });
-            }
-            
-            const fire = new THREE.Mesh(window.fireGeometry, fireMaterial);
-            fire.scale.set(fireSize, fireSize, 1);
-            
-            // Position fire behind missile
-            const missileBackVector = missileDirection.clone().negate();
-            const backDistance = isAccelerating ? 
-                THREE.MathUtils.randFloat(3, 6) : 
-                THREE.MathUtils.randFloat(2, 4);
-            
-            fire.position.copy(missile.position)
-                .add(missileBackVector.clone().multiplyScalar(backDistance))
-                .add(new THREE.Vector3(
-                    THREE.MathUtils.randFloatSpread(isAccelerating ? 0.8 : 0.4),
-                    THREE.MathUtils.randFloatSpread(isAccelerating ? 0.8 : 0.4),
-                    THREE.MathUtils.randFloatSpread(isAccelerating ? 0.8 : 0.4)
-                ));
-            
-            // Add fire behavior with better memory management
-            fire.userData = {
-                life: THREE.MathUtils.randFloat(0.2, 0.5), // Shorter life for better performance
-                maxLife: THREE.MathUtils.randFloat(0.2, 0.5),
-                velocity: missileBackVector.clone().multiplyScalar(
-                    isAccelerating ? 
-                    THREE.MathUtils.randFloat(0.2, 0.4) : 
-                    THREE.MathUtils.randFloat(0.1, 0.2)
-                ),
-                isBillboard: true,
-                onRemove: function(material) {
-                    // Return material to pool when particle is removed
-                    if (window.fireMaterialPool.length < 20) { // Limit pool size
-                        window.fireMaterialPool.push(material);
-                    }
-                }
-            };
-            
-            scene.add(fire);
-            smokeParticles.push(fire);
+        /*
+        function createFireAndSmoke() {
+        // Check if we're at the particle limit
+        if (smokeParticles.length > MAX_SMOKE_PARTICLES) {
+        // Remove oldest particles if we're at the limit
+        const removeCount = Math.min(20, smokeParticles.length - MAX_SMOKE_PARTICLES + 20);
+        for (let i = 0; i < removeCount; i++) {
+            const oldParticle = smokeParticles.shift(); // Remove oldest first
+            disposeObject(oldParticle);
         }
     }
-    
-    // Only create smoke on intervals (less frequent than fire)
-    if (!window.lastSmokeCreationTime) window.lastSmokeCreationTime = 0;
-    const timeSinceLastSmoke = (now - window.lastSmokeCreationTime) / 1000;
-    const smokeInterval = 0.12; // Less frequent smoke creation
-    
-    if (smokeCount > 0 && timeSinceLastSmoke >= smokeInterval) {
-        window.lastSmokeCreationTime = now;
+
+    // Create particle group for fire
+    const fireCount = isAccelerating ? 6 : 2; // Less fire when not accelerating
+   
+    for (let i = 0; i < fireCount; i++) {
+        // More varied sizes for fire
+        const fireSize = isAccelerating ? 
+            THREE.MathUtils.randFloat(1.0, 2.0) : 
+            THREE.MathUtils.randFloat(0.6, 1.2);
         
-        // Create smoke particles (reuse common textures)
+        // Create more complex fire meshes (sphere + light)
+        const fireGeometry = new THREE.SphereGeometry(fireSize, 8, 8);
+        
+        // More vibrant colors for fire
+        const colorRandom = Math.random();
+        const fireColor = colorRandom < 0.3 ? 
+            0xffff00 : // Yellow
+            (colorRandom < 0.7 ? 0xff5500 : 0xff2200); // Orange or Red
+        
+        const fireMaterial = new THREE.MeshBasicMaterial({
+            color: fireColor,
+            transparent: true,
+            opacity: THREE.MathUtils.randFloat(0.7, 1.0) // Higher opacity
+        });
+        
+        const fire = new THREE.Mesh(fireGeometry, fireMaterial);
+        
+        // Position fire behind missile with more variance for accelerating
+        const missileBackVector = missileDirection.clone().negate();
+        const backDistance = isAccelerating ? 
+            THREE.MathUtils.randFloat(3, 7) : 
+            THREE.MathUtils.randFloat(2, 5);
+        
+        fire.position.copy(missile.position)
+            .add(missileBackVector.clone().multiplyScalar(backDistance))
+            .add(new THREE.Vector3(
+                THREE.MathUtils.randFloatSpread(isAccelerating ? 1.0 : 0.5),
+                THREE.MathUtils.randFloatSpread(isAccelerating ? 1.0 : 0.5),
+                THREE.MathUtils.randFloatSpread(isAccelerating ? 1.0 : 0.5)
+            ));
+        
+        // Add point light for glow effect on largest particles
+        if (fireSize > 1.5 && isAccelerating) {
+            const fireLight = new THREE.PointLight(fireColor, 2, 8);
+            fireLight.position.copy(fire.position);
+            scene.add(fireLight);
+            
+            // Store light in fire's userData
+            fire.userData.light = fireLight;
+        }
+        
+        // Fire behavior
+        fire.userData = {
+            life: THREE.MathUtils.randFloat(0.3, 0.7),
+            maxLife: THREE.MathUtils.randFloat(0.3, 0.7),
+            velocity: missileBackVector.clone().multiplyScalar(
+                isAccelerating ? 
+                THREE.MathUtils.randFloat(0.2, 0.5) : 
+                THREE.MathUtils.randFloat(0.1, 0.3)
+            )
+        };
+        
+        scene.add(fire);
+        smokeParticles.push(fire);
+    }
+
+    
+    
+    // Create smoke particles
+    if (!isAccelerating || Math.random() > 0.3) {
+        const smokeCount = isAccelerating ? 1 : 2; // More smoke when not accelerating
+        
         for (let i = 0; i < smokeCount; i++) {
-            const smokeGeometry = new THREE.PlaneGeometry(1, 1);
+            const smokeGeometry = new THREE.SphereGeometry(0.3, 8, 8);
             const smokeMaterial = new THREE.MeshBasicMaterial({
-                map: window.smokeTexture || window.billowyTexture || null, // Reuse textures
+                color: 0x888888,
                 transparent: true,
-                opacity: 0.3,
-                depthWrite: false,
-                side: THREE.DoubleSide
+                opacity: 0.4
             });
             
             const smoke = new THREE.Mesh(smokeGeometry, smokeMaterial);
-            const smokeSize = THREE.MathUtils.randFloat(1.2, 1.8);
-            smoke.scale.set(smokeSize, smokeSize, 1);
         
             // Position smoke behind missile 
             const missileBackVector = missileDirection.clone().negate();
             smoke.position.copy(missile.position)
-                .add(missileBackVector.clone().multiplyScalar(5))
+                .add(missileBackVector.multiplyScalar(6))
                 .add(new THREE.Vector3(
-                    THREE.MathUtils.randFloatSpread(0.8), 
-                    THREE.MathUtils.randFloatSpread(0.8), 
-                    THREE.MathUtils.randFloatSpread(0.8)  
+                    THREE.MathUtils.randFloatSpread(1), 
+                    THREE.MathUtils.randFloatSpread(1), 
+                    THREE.MathUtils.randFloatSpread(1)  
                 ));
                     
+            // Corrected from 'fire' to 'smoke'
             smoke.userData = {
-                life: 0.8,
-                maxLife: 0.8,
-                growRate: THREE.MathUtils.randFloat(1.02, 1.04),
+                life: 1.0,
+                maxLife: 1.0,
+                growRate: THREE.MathUtils.randFloat(1.02, 1.05),
                 velocity: new THREE.Vector3(
-                    THREE.MathUtils.randFloatSpread(0.1) + globalWindDirection.x * 0.2,
-                    THREE.MathUtils.randFloat(0.05, 0.2) + globalWindDirection.y * 0.2,
-                    THREE.MathUtils.randFloatSpread(0.1) + globalWindDirection.z * 0.2
-                ),
-                isBillboard: true
+                    THREE.MathUtils.randFloatSpread(0.1),
+                    THREE.MathUtils.randFloat(0.05, 0.2),
+                    THREE.MathUtils.randFloatSpread(0.1)
+                )
             };
                 
             scene.add(smoke);
@@ -2816,10 +3162,7 @@ function createFireAndSmoke() {
         }
     }
 }
-  */  
-
-   
-
+    */
 
     function initEnemyExplosionMaterials() {
     // Instead of creating different materials, we'll use the same shader materials
@@ -2899,16 +3242,16 @@ function createExplosion(position, isPlayerEvent = false, createGroundScorch = t
     const maxSecondaryParticles = isPlayerEvent ? 20 : 12; // Increased from 10 to 12
     
     // STAGE 1: Initial fireball (bright center, fast expansion)
-    createExplosionCore(position, maxFireballParticles, isPlayerEvent);
+    createExplosionCore(position, maxFireballParticles, true);
     
     // STAGE 2: Flying debris (with trails)
     setTimeout(() => {
-        if (gameActive) createExplosionDebris(position, maxDebrisParticles, isPlayerEvent);
+        if (gameActive) createExplosionDebris(position, maxDebrisParticles, true);
     }, 50);
     
     // STAGE 3: Secondary blast wave
     setTimeout(() => {
-        if (gameActive) createExplosionSecondary(position, maxSecondaryParticles, isPlayerEvent);
+        if (gameActive) createExplosionSecondary(position, maxSecondaryParticles, true);
     }, 150);
     
     // Handle remaining explosion logic - create a scorch mark but NO smoke from explosion directly
@@ -2978,12 +3321,12 @@ function createExplosionCore(position, count, isLarge) {
     const geometry = new THREE.PlaneGeometry(1, 1);
     
     for (let i = 0; i < count; i++) {
-        // Create shader material with emissive effect - uses the same advanced shader
-        // for both player and enemy explosions
+        // Create shader material with emissive effect
         const material = new THREE.ShaderMaterial({
             uniforms: {
                 map: { value: window.explosionCoreTexture },
-                color: { value: new THREE.Color(0xffbb44) }, // Base orange color
+                // Brighter color for enemy explosions to make them more visible
+                color: { value: new THREE.Color(isLarge ? 0xffbb44 : 0xffcc55) }, 
                 time: { value: 0.0 }
             },
             vertexShader: `
@@ -3023,17 +3366,18 @@ function createExplosionCore(position, count, isLarge) {
         const particle = new THREE.Mesh(geometry, material);
         particle.position.copy(position.clone());
         
+        // Make enemy explosion fireballs slightly larger to be more visible
         // Size still depends on whether it's player or enemy
         const size = isLarge ? 
             THREE.MathUtils.randFloat(3.0, 8.0) : 
-            THREE.MathUtils.randFloat(2.0, 6.0);
+            THREE.MathUtils.randFloat(2.5, 7.0); // Increased size for enemy fireballs
             
         particle.scale.set(size, size, 1);
         
         // Randomized outward velocity but keep particles closer to center
         const angle = Math.random() * Math.PI * 2;
         const elevation = (Math.random() * Math.PI - Math.PI/2) * 0.6; // Biased toward horizontal
-        const speed = THREE.MathUtils.randFloat(8, 20); // Slower initial speed for longer effect
+        const speed = THREE.MathUtils.randFloat(8, isLarge ? 20 : 18); // Slightly slower for enemy missiles
         
         const velocity = new THREE.Vector3(
             Math.cos(angle) * Math.cos(elevation) * speed,
@@ -3041,18 +3385,23 @@ function createExplosionCore(position, count, isLarge) {
             Math.sin(angle) * Math.cos(elevation) * speed
         );
         
+        // Slightly longer lifetime for enemy fireballs to make them more noticeable
+        const lifetime = isLarge ? 
+            THREE.MathUtils.randFloat(0.8, 1.6) :
+            THREE.MathUtils.randFloat(1.0, 1.8); // Increased lifetime
+            
         // Make fireball grow rapidly at first, then fade
         particle.userData = {
-            life: THREE.MathUtils.randFloat(0.8, 1.6), // Longer life
-            maxLife: THREE.MathUtils.randFloat(0.8, 1.6),
+            life: lifetime,
+            maxLife: lifetime,
             velocity: velocity,
             isBillboard: true,
             isFireball: true,
             growthPhase: true,
             growthTime: THREE.MathUtils.randFloat(0.3, 0.5), // Time spent growing
-            maxGrowth: isLarge ? THREE.MathUtils.randFloat(1.8, 2.5) : THREE.MathUtils.randFloat(1.6, 2.2),
+            maxGrowth: isLarge ? THREE.MathUtils.randFloat(1.8, 2.5) : THREE.MathUtils.randFloat(1.7, 2.3), // Increased enemy growth
             initialScale: size,
-            acceleration: new THREE.Vector3(0, isLarge ? 2 : 1, 0) // Slight upward acceleration
+            acceleration: new THREE.Vector3(0, isLarge ? 2 : 1.5, 0) // Increased upward acceleration
         };
         
         scene.add(particle);
@@ -3291,10 +3640,21 @@ function createExplosionSecondary(position, count, isLarge) {
     }
 }
 
-// Create billowing smoke after explosion
-function createBillowingSmoke(position) {
+
+    
+   
+
+
+
+function createDamagedBuildingSmoke(position, damageLevel) {
+    // Skip if we're at particle limit
     if (smokeParticles.length > MAX_SMOKE_PARTICLES * 0.9) return;
     
+    // Create smoke with size based on damage
+    const smokeSize = THREE.MathUtils.randFloat(2.0, 4.0) * Math.sqrt(damageLevel);
+    const smokeGeometry = new THREE.PlaneGeometry(1, 1);
+    
+    // Make sure the billowy texture exists before using it
     if (!window.billowyTexture) {
         const canvas = document.createElement('canvas');
         canvas.width = 128;
@@ -3304,7 +3664,7 @@ function createBillowingSmoke(position) {
         const centerX = canvas.width / 2;
         const centerY = canvas.height / 2;
         
-        // Create soft-edged cloud-like gradient
+        // Create soft-edged cloud-like gradient (consistently gray)
         const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, canvas.width/2);
         gradient.addColorStop(0, 'rgba(80, 80, 80, 0.9)'); // Dense center
         gradient.addColorStop(0.5, 'rgba(70, 70, 70, 0.6)'); // Mid-density
@@ -3334,81 +3694,8 @@ function createBillowingSmoke(position) {
         window.billowyTexture = new THREE.CanvasTexture(canvas);
     }
     
-    const geometry = new THREE.PlaneGeometry(1, 1);
-    const material = new THREE.MeshBasicMaterial({
-        map: window.billowyTexture,
-        transparent: true,
-        depthWrite: false,
-        opacity: 0.7,
-        side: THREE.DoubleSide
-    });
-    
-    const smoke = new THREE.Mesh(geometry, material);
-    smoke.position.copy(position);
-    
-    // Start small, will billow outward
-    const size = THREE.MathUtils.randFloat(2, 4);
-    smoke.scale.set(size, size, 1);
-    
-    // Slow rising velocity
-    const driftX = THREE.MathUtils.randFloatSpread(1);
-    const driftZ = THREE.MathUtils.randFloatSpread(1);
-    
-    smoke.userData = {
-        life: THREE.MathUtils.randFloat(3, 6), // Long-lasting smoke
-        maxLife: THREE.MathUtils.randFloat(3, 6),
-        growRate: 1.01, // Slow growth
-        velocity: new THREE.Vector3(
-            driftX, 
-            THREE.MathUtils.randFloat(1, 3), // Upward drift
-            driftZ
-        ),
-        isBillboard: true,
-        rotationSpeed: new THREE.Vector3(0, 0, THREE.MathUtils.randFloatSpread(0.2)),
-        initialScale: size
-    };
-    
-    scene.add(smoke);
-    smokeParticles.push(smoke);
-}
-
-function updateDamagedBuildingsSmoke() {
-    // Process each damaged building
-    for (let i = 0; i < damagedBuildings.length; i++) {
-        const building = damagedBuildings[i];
-        
-        // Skip if building no longer exists or isn't in the scene
-        if (!building || !building.parent) {
-            damagedBuildings.splice(i, 1);
-            i--;
-            continue;
-        }
-        
-        // Only emit smoke occasionally for performance reasons
-        if (Math.random() < 0.1 * building.userData.damageLevel) {
-            // Create smoke based on damage level
-            const smokeSource = new THREE.Vector3(
-                building.position.x + THREE.MathUtils.randFloatSpread(building.userData.width * 0.5),
-                building.position.y + building.userData.height * 0.7,
-                building.position.z + THREE.MathUtils.randFloatSpread(building.userData.width * 0.5)
-            );
-            
-            // Create billowing smoke
-            createDamagedBuildingSmoke(smokeSource, building.userData.damageLevel);
-        }
-    }
-}
-
-function createDamagedBuildingSmoke(position, damageLevel) {
-    // Skip if we're at particle limit
-    if (smokeParticles.length > MAX_SMOKE_PARTICLES * 0.9) return;
-    
-    // Create smoke with size based on damage
-    const smokeSize = THREE.MathUtils.randFloat(2.0, 4.0) * Math.sqrt(damageLevel);
-    const smokeGeometry = new THREE.PlaneGeometry(1, 1);
-    
-    // Reuse the scorchSmokeTexture or billowyTexture if available
-    const smokeTexture = window.scorchSmokeTexture || window.billowyTexture;
+    // ALWAYS use billowyTexture for consistency, never fall back to scorchSmokeTexture
+    const smokeTexture = window.billowyTexture;
     
     const smokeMaterial = new THREE.MeshBasicMaterial({
         map: smokeTexture,
@@ -3420,19 +3707,21 @@ function createDamagedBuildingSmoke(position, damageLevel) {
     
     const smoke = new THREE.Mesh(smokeGeometry, smokeMaterial);
     smoke.scale.set(smokeSize, smokeSize, 1);
+    
+    // Position exactly at source point without offset
     smoke.position.copy(position);
     
-    // Add upward velocity with some randomness
+    // Add upward velocity with some randomness - INCREASED VERTICAL VELOCITY
     const velocity = new THREE.Vector3(
         THREE.MathUtils.randFloatSpread(0.3) + globalWindDirection.x,
-        THREE.MathUtils.randFloat(1.0, 2.0),
+        THREE.MathUtils.randFloat(4.0, 7.0), // Dramatically increased for tall plumes
         THREE.MathUtils.randFloatSpread(0.3) + globalWindDirection.z
     );
     
-    // Make smoke last longer based on damage level
+    // Make smoke last longer to allow it to rise higher before disappearing
     smoke.userData = {
-        life: THREE.MathUtils.randFloat(1.5, 3.0) * damageLevel,
-        maxLife: THREE.MathUtils.randFloat(1.5, 3.0) * damageLevel,
+        life: THREE.MathUtils.randFloat(4.0, 6.0) * damageLevel, // Increased lifetime for taller plumes
+        maxLife: THREE.MathUtils.randFloat(4.0, 6.0) * damageLevel,
         growRate: THREE.MathUtils.randFloat(1.01, 1.02),
         velocity: velocity,
         isBillboard: true,
@@ -3461,6 +3750,17 @@ function addBuildingDamage(building) {
     // Optionally, darken the building to show damage
     if (building.material) {
         building.material.color.multiplyScalar(0.7);
+    }
+    
+    // IMPORTANT: Create initial smoke burst immediately
+    // This ensures smoke appears right when the building is damaged
+    for (let i = 0; i < 5; i++) {
+        const smokeSource = new THREE.Vector3(
+            building.position.x + THREE.MathUtils.randFloatSpread(building.userData.width * 0.5),
+            building.position.y + building.userData.height * 0.5,
+            building.position.z + THREE.MathUtils.randFloatSpread(building.userData.width * 0.5)
+        );
+        createDamagedBuildingSmoke(smokeSource, building.userData.damageLevel);
     }
 }
         
@@ -3967,7 +4267,8 @@ function updateParticles(delta) {
                     const baseScale = particle.userData.initialScale * (lifeRatio * 0.8 + 0.2);
                     particle.scale.set(
                         baseScale * stretchFactor,
-                        baseScale
+                        baseScale,
+                        1
                     );
                     
                     // Align with velocity direction
@@ -3986,7 +4287,8 @@ function updateParticles(delta) {
             else if (particle.userData.isWave) {
                 // Wave particles expand outward
                 if (particle.userData.growRate) {
-                    particle.scale.multiplyScalar(particle.userData.growRate * (0.95 + 0.1 * Math.cos(Date.now() * 0.01))); // Slight pulsing
+                    particle.scale.multiplyScalar(particle.userData.growRate * 
+                        (0.95 + 0.1 * Math.cos(Date.now() * 0.01))); // Slight pulsing
                 }
                 
                 // Update color and opacity
@@ -4072,6 +4374,333 @@ function updateHUD() {
         speedBar.style.backgroundColor = speedColor;
         speedValue.style.color = speedColor;
     }
+}
+
+function listenForOtherPlayers(activePlayers) {
+    console.log("Setting up listener for other players...");
+    
+    try {
+        // Unsubscribe from any existing listener
+        if (window.otherPlayersListener) {
+            window.otherPlayersListener();
+            window.otherPlayersListener = null;
+        }
+        
+        // Listen for active players changes with error handling
+        window.otherPlayersListener = activePlayers
+            .onSnapshot(snapshot => {
+                console.log(`Received active players update with ${snapshot.docChanges().length} changes`);
+                
+                snapshot.docChanges().forEach(change => {
+                    const playerId = change.doc.id;
+                    const playerData = change.doc.data();
+                    
+                    // Skip our own player
+                    if (playerId === playerStats.id) {
+                        console.log("Skipping own player update");
+                        return;
+                    }
+                    
+                    if (change.type === "added") {
+                        console.log(`New player joined: ${playerData.name} (${playerId})`);
+                        updateOtherPlayer(playerId, playerData);
+                    }
+                    else if (change.type === "modified") {
+                        // We could log this but it would spam the console
+                        updateOtherPlayer(playerId, playerData);
+                    }
+                    else if (change.type === "removed") {
+                        console.log(`Player left: ${playerId}`);
+                        
+                        // Make sure we clean up their missiles too
+                        cleanupDisconnectedPlayerMissiles(playerId);
+                    }
+                });
+                
+                // Update player count after changes
+                updatePlayerCountUI();
+            }, error => {
+                console.error("Error listening for players:", error);
+                
+                // Try to reestablish the listener after a delay
+                setTimeout(() => {
+                    console.log("Attempting to reestablish player listener...");
+                    listenForOtherPlayers(activePlayers);
+                }, 5000);
+            });
+    } catch (error) {
+        console.error("Error setting up player listener:", error);
+    }
+}
+
+function updatePlayerCountUI() {
+    // Count players
+    const count = Object.keys(otherPlayers).length + 1; // +1 for local player
+    
+    // Create or update the counter
+    let counter = document.getElementById('player-counter');
+    if (!counter) {
+        counter = document.createElement('div');
+        counter.id = 'player-counter';
+        counter.style.position = 'absolute';
+        counter.style.top = '10px';
+        counter.style.left = '50%';
+        counter.style.transform = 'translateX(-50%)';
+        counter.style.background = 'rgba(0,0,0,0.6)';
+        counter.style.color = '#66ccff';
+        counter.style.padding = '5px 15px';
+        counter.style.borderRadius = '20px';
+        counter.style.fontFamily = 'Quantico, sans-serif';
+        counter.style.fontWeight = 'bold';
+        counter.style.fontSize = '16px';
+        counter.style.zIndex = '1000';
+        document.body.appendChild(counter);
+    }
+    
+    // Update the text
+    counter.textContent = `Players: ${count}`;
+    
+    // Highlight if more than one player
+    counter.style.color = count > 1 ? '#66ff66' : '#66ccff';
+    
+    console.log(`Current player count: ${count}`);
+    return count;
+}
+
+// Setup presence detection to handle disconnects
+function setupPlayerPresence(playerRef) {
+    if (!window.firebaseDB) {
+        console.error("Realtime Database not available for presence detection");
+        return;
+    }
+    
+    try {
+        console.log("Setting up presence detection");
+        const playerId = playerStats.id;
+        
+        // Use Realtime Database for presence
+        const presenceRef = window.firebaseDB.ref(`presence/${playerId}`);
+        
+        // When this device disconnects, remove this player from presence
+        presenceRef.onDisconnect().remove()
+            .then(() => {
+                // Successfully configured onDisconnect
+                console.log("Disconnect cleanup configured successfully");
+                
+                // Now write the presence data
+                presenceRef.set({
+                    online: true,
+                    lastActive: firebase.database.ServerValue.TIMESTAMP,
+                    name: playerStats.name,
+                    color: playerStats.color
+                }).then(() => {
+                    console.log("Presence data written successfully");
+                }).catch(error => {
+                    console.error("Error writing presence data:", error);
+                });
+            })
+            .catch(error => {
+                console.error("Error setting up disconnect:", error);
+            });
+        
+        // If we have a Firestore reference, also set up cleanup there
+        if (playerRef && typeof playerRef.onDisconnect === 'function') {
+            playerRef.onDisconnect().delete()
+                .then(() => {
+                    console.log("Firestore player cleanup configured");
+                })
+                .catch(error => {
+                    console.error("Error setting up Firestore cleanup:", error);
+                });
+        } else if (playerRef) {
+            // Manual cleanup if onDisconnect isn't available for Firestore
+            // We'll use the presence system to detect and clean up
+            console.log("Setting up manual cleanup via presence system");
+            
+            // Listen for presence changes to clean up disconnected players
+            window.firebaseDB.ref('presence').on('child_removed', snapshot => {
+                const disconnectedPlayerId = snapshot.key;
+                
+                // Clean up player missiles when they disconnect
+                cleanupDisconnectedPlayerMissiles(disconnectedPlayerId);
+                
+                // Also clean up Firestore data
+                if (db) {
+                    db.collection("activePlayers").doc(disconnectedPlayerId).delete()
+                        .then(() => {
+                            console.log("Removed disconnected player from Firestore:", disconnectedPlayerId);
+                        })
+                        .catch(error => {
+                            console.error("Error removing disconnected player:", error);
+                        });
+                }
+            });
+        }
+    } catch (error) {
+        console.error("Error setting up presence:", error);
+    }
+}
+
+function updateOtherPlayer(playerId, playerData) {
+  // Skip outdated updates for existing players
+  if (otherPlayers[playerId] && 
+      otherPlayers[playerId].lastUpdateTime && 
+      playerData.lastUpdated?.toMillis && 
+      otherPlayers[playerId].lastUpdateTime > playerData.lastUpdated?.toMillis()) {
+    return;
+  }
+  
+  // Create player if doesn't exist
+  if (!otherPlayers[playerId]) {
+    console.log(`New player joined: ${playerData.name}`);
+    
+    // Create missile model for this player
+    const otherMissile = createOtherPlayerMissile(playerData.color || "#5c5c5c");
+    scene.add(otherMissile);
+
+     // Make sure the missile is visible
+     otherMissile.visible = true;
+    
+    otherPlayers[playerId] = {
+      id: playerId,
+      name: playerData.name,
+      missile: otherMissile,
+      lastPosition: new THREE.Vector3(),
+      targetPosition: new THREE.Vector3(),
+      direction: new THREE.Vector3(),
+      targetDirection: new THREE.Vector3(),
+      color: playerData.color,
+      isAccelerating: playerData.isAccelerating || false,
+      lastUpdateTime: playerData.lastUpdated?.toMillis() || Date.now()
+    };
+    
+    // Add marker to minimap
+    addOtherPlayerMinimapMarker(playerId, playerData.color);
+
+     // Update the leaderboard to show the new player
+     updateLeaderboard();
+  }
+  
+  // Update player data
+  const player = otherPlayers[playerId];
+  player.name = playerData.name;
+  player.lastUpdateTime = playerData.lastUpdated?.toMillis() || Date.now();
+
+  // Update leaderboard stats if available
+  if (playerData.targetsDestroyed !== undefined) {
+    player.targetsDestroyed = playerData.targetsDestroyed;
+    updateLeaderboard(); // Update leaderboard when kills change
+  }
+  
+  if (playerData.roundsWon !== undefined) {
+    player.roundsWon = playerData.roundsWon;
+  }
+  
+  // Set target position and direction for smooth interpolation
+  if (playerData.position) {
+    player.targetPosition.set(
+      playerData.position.x,
+      playerData.position.y,
+      playerData.position.z
+    );
+  }
+  
+  if (playerData.direction) {
+    player.targetDirection.set(
+      playerData.direction.x,
+      playerData.direction.y,
+      playerData.direction.z
+    );
+  }
+  
+  player.isAccelerating = playerData.isAccelerating || false;
+}
+
+function removeOtherPlayer(playerId) {
+  const player = otherPlayers[playerId];
+  if (!player) return;
+  
+  console.log(`Player left: ${player.name}`);
+  
+  // Remove missile from scene
+  if (player.missile) {
+    scene.remove(player.missile);
+    disposeObject(player.missile);
+  }
+  
+  // Remove minimap marker
+  removeOtherPlayerMinimapMarker(playerId);
+  
+  // Delete player data
+  delete otherPlayers[playerId];
+}
+
+// Create a missile model for other players
+function createOtherPlayerMissile(color) {
+  const otherMissile = new THREE.Group();
+  
+  // Create the main body (cylinder)
+  const bodyGeometry = new THREE.CylinderGeometry(1, 1, 8, 16);
+  const bodyMaterial = new THREE.MeshStandardMaterial({ 
+      color: color,
+      metalness: 0.3,
+      roughness: 0.6
+  });
+  const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+  body.castShadow = false;
+  otherMissile.add(body);
+  
+  // Create the nose cone (cone)
+  const noseGeometry = new THREE.ConeGeometry(1, 3, 16);
+  const noseMaterial = new THREE.MeshStandardMaterial({ color: 0x999999 });
+  const nose = new THREE.Mesh(noseGeometry, noseMaterial);
+  nose.position.y = 5.5;
+  nose.castShadow = false;
+  otherMissile.add(nose);
+
+  // Create fins (simplified)
+  const finGeometry = new THREE.BoxGeometry(0.2, 2, 3);
+  const finMaterial = new THREE.MeshStandardMaterial({ color: 0x242424 });
+  
+  for (let i = 0; i < 4; i++) {
+      const fin = new THREE.Mesh(finGeometry, finMaterial);
+      fin.position.y = -3;
+      fin.rotation.y = (Math.PI / 2) * i;
+      fin.position.x = Math.sin((Math.PI / 2) * i) * 1.2;
+      fin.position.z = Math.cos((Math.PI / 2) * i) * 1.2;
+      otherMissile.add(fin);
+  }
+  
+  otherMissile.rotation.x = Math.PI / 2; // Point forward
+  
+  return otherMissile;
+}
+
+function cleanupDisconnectedPlayerMissiles(playerId) {
+    console.log(`Cleaning up missiles for disconnected player: ${playerId}`);
+    
+    // Check if the player had an active missile
+    if (otherPlayers[playerId] && otherPlayers[playerId].missile) {
+        const missile = otherPlayers[playerId].missile;
+        
+        // Create a small explosion effect where the missile was
+        createExplosion(missile.position.clone(), false, false);
+        
+        // Remove the missile from the scene
+        scene.remove(missile);
+        disposeObject(missile);
+        
+        console.log(`Removed missile for disconnected player: ${playerId}`);
+    }
+    
+    // Remove from otherPlayers object (this should also update minimap marker)
+    removeOtherPlayer(playerId);
+    
+    // Update player count in UI to reflect the disconnection
+    updatePlayerCountUI();
+    
+    // Update leaderboard to remove the disconnected player
+    updateLeaderboard();
 }
         
     function checkCollisions() {
@@ -4306,8 +4935,8 @@ function handleCrash(impactPoint, createGroundScorch = true) {
     
     // Check if all targets are destroyed
     if (stats.targetsRemaining <= 0) {
-        // FIXED: Set a longer reset delay to prevent normal missile reset
-        resetDelay = 100.0; // Very long delay prevents normal reset
+        window.gameOverTriggered = true;
+        gameActive = false; // Pause gameplay
         
         // We'll skip the normal reset process and show the game over screen
         setTimeout(() => {
@@ -4322,8 +4951,252 @@ function handleCrash(impactPoint, createGroundScorch = true) {
     finishFlight();
 }
 
+function createPlayerMissileSmoke() {
+    // Skip if we're at particle limit
+    if (smokeParticles.length > MAX_SMOKE_PARTICLES * 0.9) return;
     
+    const smokeSize = isAccelerating ? 0.5 : 0.3;
+    const smokeGeometry = new THREE.SphereGeometry(smokeSize, 8, 8);
     
+    // Use consistent gray color for smoke (matching enemy missiles)
+    const smokeMaterial = new THREE.MeshBasicMaterial({ 
+        color: 0x555555,  // Gray color matching enemy missiles
+        transparent: true,
+        opacity: isAccelerating ? 0.6 : 0.4,
+        depthWrite: false
+    });
+    
+    const smoke = new THREE.Mesh(smokeGeometry, smokeMaterial);
+    
+    // Position behind missile
+    const missileBackVector = missileDirection.clone().negate();
+    smoke.position.copy(missile.position)
+        .add(missileBackVector.multiplyScalar(4.5))
+        .add(new THREE.Vector3(
+            THREE.MathUtils.randFloatSpread(0.3),
+            THREE.MathUtils.randFloatSpread(0.3),
+            THREE.MathUtils.randFloatSpread(0.3)
+        ));
+    
+    // Smoke behavior - more dynamic when accelerating
+    smoke.userData = {
+        life: isAccelerating ? 1.2 : 0.8,
+        maxLife: isAccelerating ? 1.2 : 0.8,
+        growRate: isAccelerating ? 1.04 : 1.02,
+        velocity: new THREE.Vector3(
+            THREE.MathUtils.randFloatSpread(0.05),
+            THREE.MathUtils.randFloat(isAccelerating ? 0.05 : 0.02, isAccelerating ? 0.15 : 0.08),
+            THREE.MathUtils.randFloatSpread(0.05)
+        )
+    };
+    
+    scene.add(smoke);
+    smokeParticles.push(smoke);
+}
+    
+function updateOtherPlayers(delta) {
+  const INTERPOLATION_SPEED = 5.0;
+  
+  Object.values(otherPlayers).forEach(player => {
+    if (!player.missile) return;
+    
+    // Interpolate position for smooth movement
+    player.lastPosition.lerp(player.targetPosition, delta * INTERPOLATION_SPEED);
+    player.missile.position.copy(player.lastPosition);
+    
+    // Interpolate rotation
+    player.direction.lerp(player.targetDirection, delta * INTERPOLATION_SPEED);
+    
+    // Track last movement with a timestamp
+    if (!player.lastPositionUpdate) {
+      player.lastPositionUpdate = Date.now();
+      player.lastMovementPosition = player.lastPosition.clone();
+    } else {
+      // Check if the missile has moved significantly
+      const movementThreshold = 0.1;
+      if (player.lastMovementPosition.distanceTo(player.lastPosition) > movementThreshold) {
+        player.lastPositionUpdate = Date.now();
+        player.lastMovementPosition.copy(player.lastPosition);
+      } else {
+        // Check for timeout - remove missiles inactive for more than 10 seconds
+        const inactiveTime = Date.now() - player.lastPositionUpdate;
+        if (inactiveTime > 10000) { // 10 seconds
+          console.log(`Removing stale missile for player: ${player.id || 'unknown'} - inactive for ${inactiveTime/1000}s`);
+          removeOtherPlayer(player.id);
+        }
+      }
+    }
+  });
+    
+  // Update player count after potential removals
+  updatePlayerCountUI();
+}
+
+function onPlayerAuthenticated() {
+    // Set up player with random name and color 
+    enhancePlayerInitialization();
+    
+    console.log("Player authenticated! ID:", playerStats.id);
+    console.log("Player name:", playerStats.name);
+    console.log("Player color:", playerStats.color);
+    
+    // Explicitly setup multiplayer sync
+    setupMultiplayerSync();
+    
+    // Setup presence detection immediately
+    if (window.firebaseDB) {
+        setupPlayerPresence();
+    } else {
+        console.error("Cannot setup presence - Realtime Database unavailable");
+    }
+    
+    // Update player count in UI
+    updatePlayerCountUI();
+    
+    // Add a debug message to confirm when it's complete
+    console.log("Player authentication process completed");
+}
+
+function addOtherPlayerMinimapMarker(playerId, color) {
+  // Skip if there's no minimap
+  if (!minimapScene) return;
+  
+  // Create triangle marker similar to player marker
+  const markerSize = 8;
+  const triangleShape = new THREE.Shape();
+  triangleShape.moveTo(0, -markerSize);
+  triangleShape.lineTo(-markerSize * 0.6, markerSize * 0.5);
+  triangleShape.lineTo(markerSize * 0.6, markerSize * 0.5);
+  triangleShape.lineTo(0, -markerSize);
+  
+  const triangleGeometry = new THREE.ShapeGeometry(triangleShape);
+  const markerMaterial = new THREE.MeshBasicMaterial({
+    color: new THREE.Color(color || "#5c5c5c"),
+    side: THREE.DoubleSide
+  });
+  
+  const marker = new THREE.Mesh(triangleGeometry, markerMaterial);
+  marker.rotation.x = Math.PI / 2; // Flat on XZ plane
+  marker.position.y = 1.8; // Slightly above ground (below player marker)
+  
+  // Add to minimap
+  minimapScene.add(marker);
+  
+  // Store reference
+  if (!otherPlayers[playerId]) {
+    otherPlayers[playerId] = {};
+  }
+  otherPlayers[playerId].minimapMarker = marker;
+}
+
+function updateOtherPlayerMinimapMarkers() {
+  Object.values(otherPlayers).forEach(player => {
+    if (!player.minimapMarker || !player.missile) return;
+    
+    // Update position
+    player.minimapMarker.position.x = player.missile.position.x;
+    player.minimapMarker.position.z = player.missile.position.z;
+    
+    // Update rotation if we have direction
+    if (player.direction && player.direction.length() > 0.5) {
+      const angle = Math.atan2(player.direction.x, -player.direction.z);
+      player.minimapMarker.rotation.set(Math.PI / 2, 0, angle);
+    }
+  });
+}
+
+function removeOtherPlayerMinimapMarker(playerId) {
+  const player = otherPlayers[playerId];
+  if (!player || !player.minimapMarker) return;
+  
+  minimapScene.remove(player.minimapMarker);
+  if (player.minimapMarker.geometry) player.minimapMarker.geometry.dispose();
+  if (player.minimapMarker.material) player.minimapMarker.material.dispose();
+  player.minimapMarker = null;
+}
+
+function updateOtherPlayerExhaust(player, delta) {
+  // Skip if player has no missile
+  if (!player.missile) return;
+  
+  // Find or create exhaust glow
+  if (!player.exhaustGlow) {
+    // Create a simple circle geometry for exhaust
+    const glowGeometry = new THREE.CircleGeometry(0.8, 16);
+    const glowMaterial = new THREE.MeshBasicMaterial({
+      color: 0x555555, // Grey exhaust for all missiles
+      transparent: true,
+      opacity: 0.8,
+      depthWrite: false
+    });
+    
+    player.exhaustGlow = new THREE.Mesh(glowGeometry, glowMaterial);
+    player.exhaustGlow.position.y = -6; // Position behind the exhaust
+    player.exhaustGlow.rotation.x = Math.PI / 2; // Orient perpendicular to missile direction
+    player.missile.add(player.exhaustGlow);
+  }
+  
+  // Scale glow based on acceleration
+  if (player.isAccelerating) {
+    player.exhaustGlow.scale.set(1.5, 1.5, 1.5);
+    player.exhaustGlow.material.opacity = 0.95;
+  } else {
+    player.exhaustGlow.scale.set(1.0, 1.0, 1.0);
+    player.exhaustGlow.material.opacity = 0.8;
+  }
+  
+  // Add subtle pulse effect
+  const pulseAmount = 0.1 * Math.sin(Date.now() * 0.01);
+  player.exhaustGlow.scale.x += pulseAmount;
+  player.exhaustGlow.scale.y += pulseAmount;
+}
+
+// Add this function to create smoke particles for other players' missiles
+function createOtherPlayerSmoke(player) {
+  // Skip if we're at particle limit
+  if (smokeParticles.length > MAX_SMOKE_PARTICLES * 0.9) return;
+  
+  // Create smoke particle
+  const smokeSize = player.isAccelerating ? 0.5 : 0.3;
+  const smokeGeometry = new THREE.SphereGeometry(smokeSize, 8, 8);
+  
+  const smokeMaterial = new THREE.MeshBasicMaterial({ 
+    color: 0x555555, // Grey color for all exhaust smoke
+    transparent: true,
+    opacity: player.isAccelerating ? 0.6 : 0.4,
+    depthWrite: false
+  });
+  
+  const smoke = new THREE.Mesh(smokeGeometry, smokeMaterial);
+  
+  // Get direction from missile orientation
+  const missileDirection = new THREE.Vector3(0, 1, 0).applyQuaternion(player.missile.quaternion);
+  
+  // Position behind missile
+  const missileBackVector = missileDirection.clone().negate();
+  smoke.position.copy(player.missile.position)
+    .add(missileBackVector.multiplyScalar(4.5))
+    .add(new THREE.Vector3(
+      THREE.MathUtils.randFloatSpread(0.3),
+      THREE.MathUtils.randFloatSpread(0.3),
+      THREE.MathUtils.randFloatSpread(0.3)
+    ));
+  
+  // Smoke behavior
+  smoke.userData = {
+    life: player.isAccelerating ? 1.2 : 0.8,
+    maxLife: player.isAccelerating ? 1.2 : 0.8,
+    growRate: player.isAccelerating ? 1.04 : 1.02,
+    velocity: new THREE.Vector3(
+      THREE.MathUtils.randFloatSpread(0.05),
+      THREE.MathUtils.randFloat(player.isAccelerating ? 0.05 : 0.02, player.isAccelerating ? 0.15 : 0.08),
+      THREE.MathUtils.randFloatSpread(0.05)
+    )
+  };
+  
+  scene.add(smoke);
+  smokeParticles.push(smoke);
+}
 
 
 function cleanupScorchMarks() {
@@ -4364,7 +5237,7 @@ function cleanupScorchMarks() {
             avgFlightTime = sum / flightTimes.length;
         }
         
-        function showGameOver() {
+    function showGameOver() {
     console.log("Showing game over screen!");
     
     // Make sure the game is inactive during transition
@@ -4384,21 +5257,22 @@ function cleanupScorchMarks() {
     let winnerText = '';
     if (!winners || winners.length === 0) {
         winnerText = "Round Complete!<br><span class='subtitle'>No targets destroyed</span>";
-    } else if (winners.length === 1) {
-        // Single winner
+    } else {
+        // Single winner (with our new code there should always be just one winner)
         const winner = winners[0];
         const isPlayer = winner.id === playerStats.id;
         
+        // Calculate round duration in seconds - use a sensible default for very short rounds
+        const roundDurationInSeconds = Math.max(10, elapsedTime / 1000);
+        
+        // Calculate TPM based on round duration, not the tracked time which may be incorrect
+        const tpm = (winner.targetsDestroyed / (roundDurationInSeconds / 60));
+        const formattedTpm = tpm.toFixed(2);
+        
         winnerText = `
             <span style="color: ${winner.color}">${winner.name}</span> Wins!<br>
-            <span class='subtitle'>${isPlayer ? "You" : winner.name} destroyed ${winner.targetsDestroyed} targets</span>
-        `;
-    } else {
-        // Multiple winners (tie)
-        const winnerNames = winners.map(w => `<span style="color: ${w.color}">${w.name}</span>`).join(", ");
-        winnerText = `
-            Tie Game!<br>
-            <span class='subtitle'>${winnerNames} each destroyed ${winners[0].targetsDestroyed} targets</span>
+            <span class='subtitle'>${isPlayer ? "You" : winner.name} destroyed ${winner.targetsDestroyed} targets
+            at ${formattedTpm} targets/min</span>
         `;
     }
     
@@ -4436,7 +5310,7 @@ function cleanupScorchMarks() {
     window.gameOverTimeout = setTimeout(() => {
         console.log("Starting new mission...");
         restartGame();
-    }, 3000);
+    }, 4000);
 }
         
 
@@ -4454,11 +5328,13 @@ function restartGame() {
     // Reset player stats for the new round (keep roundsWon)
     playerStats.targetsDestroyed = 0;
     playerStats.crashes = 0;
+    playerStats.totalPlayTimeSeconds = 0;
     
     // Reset enemy pilot stats for the new round (keep roundsWon)
     enemyPilotStats.forEach(pilot => {
         pilot.targetsDestroyed = 0;
         pilot.crashes = 0;
+        pilot.totalPlayTimeSeconds = 0;
     });
 
     // Hide game over screen, show HUD and minimap
@@ -4476,24 +5352,6 @@ function restartGame() {
     stats.crashes = 0;
     flightTimes = [];
     avgFlightTime = 0;
-
-// IMPORTANT: Clear all particles and smoke when starting a new game
-    // Clear all smoke particles
-    for (let i = smokeParticles.length - 1; i >= 0; i--) {
-        const particle = smokeParticles[i];
-        scene.remove(particle);
-        disposeObject(particle);
-    }
-    smokeParticles = [];
-    
-    // Clear all explosion particles
-    for (let i = explosionParticles.length - 1; i >= 0; i--) {
-        const particle = explosionParticles[i];
-        scene.remove(particle);
-        disposeObject(particle);
-    }
-    explosionParticles = [];
-
 
     // Clear damaged buildings array
     damagedBuildings = [];
@@ -4737,6 +5595,18 @@ function updateMissileForMobile() {
         velocity = Math.min(velocity + acceleration * dt, maxVelocity);
     } else {
         velocity = Math.max(velocity - acceleration * dt * 0.6, baseVelocity);
+    }
+
+    // Update smoke trail with variable rate based on acceleration
+    playerSmokeTimer -= delta;
+    if (playerSmokeTimer <= 0) {
+        // Emit smoke more frequently when accelerating
+        playerSmokeTimer = isAccelerating ? 0.03 : 0.06;
+        
+        // Only create smoke if missile is visible and game is active
+        if (missile.visible && gameActive && !launchAnimation && resetDelay <= 0) {
+            createPlayerMissileSmoke();
+        }
     }
     
     // Get input values
@@ -5035,75 +5905,6 @@ function createExplosionTexture() {
     return { geometry: explosionGeometry, material: explosionMaterial };
 }
 
-function cleanupAllParticleSystems() {
-    console.log("Cleaning up all particle systems...");
-    
-    // Clear all particle arrays
-    if (smokeParticles && smokeParticles.length > 0) {
-        for (let i = smokeParticles.length - 1; i >= 0; i--) {
-            const particle = smokeParticles[i];
-            if (particle && scene) {
-                scene.remove(particle);
-                disposeObject(particle);
-            }
-        }
-        smokeParticles = [];
-    }
-    
-    if (explosionParticles && explosionParticles.length > 0) {
-        for (let i = explosionParticles.length - 1; i >= 0; i--) {
-            const particle = explosionParticles[i];
-            if (particle && scene) {
-                scene.remove(particle);
-                disposeObject(particle);
-            }
-        }
-        explosionParticles = [];
-    }
-    
-    // Clear particle batches
-    if (particleBatches && particleBatches.length > 0) {
-        for (let i = particleBatches.length - 1; i >= 0; i--) {
-            const batch = particleBatches[i];
-            if (batch && batch.mesh && scene) {
-                scene.remove(batch.mesh);
-                if (batch.mesh.geometry) batch.mesh.geometry.dispose();
-                if (batch.mesh.material) batch.mesh.material.dispose();
-            }
-        }
-        particleBatches = [];
-    }
-    
-    // Clear all scorch marks
-    if (scorchMarks && scorchMarks.length > 0) {
-        for (let i = scorchMarks.length - 1; i >= 0; i--) {
-            const scorch = scorchMarks[i];
-            if (scorch && scene) {
-                if (scorch.userData && scorch.userData.emberEffect) {
-                    scene.remove(scorch.userData.emberEffect);
-                    disposeObject(scorch.userData.emberEffect);
-                }
-                scene.remove(scorch);
-                disposeObject(scorch);
-            }
-        }
-        scorchMarks = [];
-    }
-    
-    // Clear damaged buildings
-    damagedBuildings = [];
-    
-    // Reset game timers
-    if (gameTimers) {
-        Object.keys(gameTimers).forEach(key => {
-            gameTimers[key] = 0;
-        });
-    }
-    
-    // Force garbage collection (browser will handle this)
-    console.log("Particle systems cleaned up");
-}
-
 
 
 function updateCamera(delta) {
@@ -5190,87 +5991,38 @@ function updateMinimap() {
 }
 
     // Function to update building representations in minimap
-    // Modify the updateMinimapBuildings function:
     function updateMinimapBuildings() {
-    // Safety check
-    if (!minimapScene) return;
+    // Hide all dots from previous frame
+    minimapBuildingDots.forEach(dot => {
+        minimapScene.remove(dot);
+    });
     
-    // First, hide all existing dots
-    for (let i = 0; i < minimapBuildingDots.length; i++) {
-        if (minimapBuildingDots[i]) {
-            minimapBuildingDots[i].visible = false;
-        }
-    }
+    minimapBuildingDots = [];
     
-    // If we don't have the pool initialized, do it now - REPLACE CIRCLES WITH SQUARES
-    if (!minimapDotPool.geometryRegular) {
-        // Create square geometries instead of circles - 50% larger
-        minimapDotPool.geometryRegular = new THREE.PlaneGeometry(18, 18); // 1.8 instead of 1.2
-        minimapDotPool.geometryTarget = new THREE.PlaneGeometry(23, 23);  // 2.3 instead of 1.5
-        
-        // Brighter colors for better visibility
-        minimapDotPool.materialRegular = new THREE.MeshBasicMaterial({color: 0xffffff});
-        minimapDotPool.materialTarget = new THREE.MeshBasicMaterial({color: 0xff0000});
-    }
-    
-    // Reuse existing dots or create new ones as needed
-    for (let i = 0; i < buildings.length; i++) {
-        const building = buildings[i];
+    // Add buildings to the minimap
+    buildings.forEach(building => {
+        // Create or reuse a dot for this building
         let dot;
         
-        // Reuse dot if possible
-        if (i < minimapBuildingDots.length) {
-            dot = minimapBuildingDots[i];
-            dot.visible = true;
-            
-            // Update color if needed
-            if (building.userData.isTarget) {
-                dot.material.color.setHex(0xff0000);
-            } else {
-                dot.material.color.setHex(0xffffff);
-            }
+        if (building.userData.isTarget) {
+            // For target buildings (red)
+            dot = window.minimapDotPool.target.pop() || 
+                  new THREE.Mesh(window.minimapDotPool.geometryTarget, window.minimapDotPool.materialTarget);
         } else {
-            // Create new dot if needed using pool
-            if (building.userData.isTarget) {
-                // Try to get from target pool
-                if (minimapDotPool.target.length > 0) {
-                    dot = minimapDotPool.target.pop();
-                    dot.visible = true;
-                } else {
-                    // Create new target dot
-                    dot = new THREE.Mesh(
-                        minimapDotPool.geometryTarget, 
-                        minimapDotPool.materialTarget.clone()
-                    );
-                }
-            } else {
-                // Try to get from regular pool
-                if (minimapDotPool.regular.length > 0) {
-                    dot = minimapDotPool.regular.pop();
-                    dot.visible = true;
-                } else {
-                    // Create new regular dot
-                    dot = new THREE.Mesh(
-                        minimapDotPool.geometryRegular, 
-                        minimapDotPool.materialRegular.clone()
-                    );
-                }
-            }
-            
-            minimapScene.add(dot);
-            minimapBuildingDots.push(dot);
+            // For regular buildings (white)
+            dot = window.minimapDotPool.regular.pop() || 
+                  new THREE.Mesh(window.minimapDotPool.geometryRegular, window.minimapDotPool.materialRegular);
         }
         
-        // Position the dot with correct rotation for orthographic top-down view
-        dot.position.x = building.position.x;
-        dot.position.z = building.position.z;
-        dot.position.y = 1.5; // Slightly higher for better visibility
+        // Position dot on minimap
+        dot.position.set(building.position.x, 1, building.position.z);
+
+         // Keep it flat (facing upward)
+         dot.rotation.x = -Math.PI / 2;
         
-        // CRITICAL: Keep the correct rotation for the square to be visible from above
-        dot.rotation.x = -Math.PI / 2; // This makes the flat square face upward
-        
-        dot.rotation.z = 0;
-    }
+        minimapScene.add(dot);
+        minimapBuildingDots.push(dot);
+    });
 }
 
 
@@ -5293,8 +6045,9 @@ function createEnemyMissile() {
     // Assign a specific pilot to this missile
     const pilotIndex = Math.floor(Math.random() * enemyPilotStats.length);
     const pilot = enemyPilotStats[pilotIndex];
-    
-    // Use pilot's color if available (or generate one)
+
+        
+    // Use pilot's color if available
     const missileColor = pilot.color || new THREE.Color(
         0.3 + Math.random() * 0.7, 
         0.3 + Math.random() * 0.7, 
@@ -5383,16 +6136,46 @@ function createEnemyMissile() {
         .subVectors(targetPosition, spawnPosition)
         .normalize();
     
-    // Save properties
+    // Determine flight style based on target position and pilot skill
+    // Deeper targets and more skilled pilots will use more advanced techniques
+    const distanceToTarget = spawnPosition.distanceTo(targetPosition);
+    const useAdvancedNavigation = distanceToTarget > citySize * 0.4 || Math.random() < 0.7;
+        
+    // Calculate piloting skill - better pilots use more evasive maneuvers
+    const pilotSkillLevel = 0.5 + Math.random() * 0.5; // 0.5 to 1.0
+    const isAggressive = Math.random() < 0.7; // 70% chance to be aggressive
+    const preferHighAltitude = Math.random() < 0.4; // Reduced from 0.6 - fewer missiles taking the high path
+    
+    // Save properties with enhanced navigation data
     enemyMissile.userData = {
         direction: direction,
-        speed: THREE.MathUtils.randFloat(0.4, 0.8),
+        originalDirection: direction.clone(), // Store for return to course
+        speedModifiers: {
+            direct: 1.0,
+            climbing: 0.9,
+            diving: 1.3, // Faster when diving
+            weaving: 1.1 // Slightly faster when weaving
+        },
         smokeTimer: 0,
+        pathfindingTimer: 0,
         targetPosition: targetPosition,
         targetBuilding: targetBuilding,
-        guidanceAccuracy: THREE.MathUtils.randFloat(0.85, 0.98),
-        pilotId: pilot.id, // Store which pilot is flying this missile
-        pilotName: pilot.name // Store pilot name for easier reference
+        guidanceAccuracy: THREE.MathUtils.randFloat(0.9, 0.98),
+        pilotId: pilot.id,
+        pilotName: pilot.name,
+        // Enhanced navigation properties
+        useAdvancedNavigation: true,
+        preferHighAltitude: preferHighAltitude,
+        pilotSkillLevel: pilotSkillLevel,
+        isAggressive: isAggressive,
+        navigationState: 'direct', // Options: 'direct', 'climbing', 'diving', 'weaving'
+        obstacleAvoidanceVector: null,
+        reactionTime: 0.3 - (pilotSkillLevel * 0.2),
+        weaveDirection: Math.random() > 0.5 ? 1 : -1, // Random initial weave direction
+        idealAltitude: Math.random() * 80 + 100, // Random altitude between 120-220
+        hasPlannedPath: false,
+        pathPoints: [],
+        currentPathIndex: 0
     };
     
     // Align missile with direction
@@ -5408,221 +6191,410 @@ function createEnemyMissile() {
 
 // Update enemy missiles
 function updateEnemyMissiles(delta) {
-    // Skip if game is not active
-    if (!gameActive) return;
+    // Update missile timer
+    enemyMissileTimer += delta;
     
-    // Update each enemy missile
-    for (let i = enemyMissiles.length - 1; i >= 0; i--) {
-        const enemy = enemyMissiles[i];
-        if (!enemy) continue;
-        
-        // Get the target for this enemy
-        const target = enemy.userData.targetBuilding;
-        
-        // Skip if target no longer exists
-        if (!target || !target.parent) {
-            // Target was destroyed, find a new one
-            assignNewTargetToEnemyMissile(enemy);
-            continue;
-        }
-        
-        // Calculate direction to target
-        const targetPos = target.position.clone();
-        const dirToTarget = targetPos.clone().sub(enemy.position).normalize();
-        
-        // ENHANCED: Add obstacle detection with raycasting
-        const raycaster = new THREE.Raycaster(
-            enemy.position.clone(),
-            dirToTarget.clone(),
-            0,
-            50 // Detection range
-        );
-        
-        // Exclude target from obstacle detection
-        const obstacles = buildings.filter(b => b !== target);
-        
-        // Check for obstacles in the path
-        const intersects = raycaster.intersectObjects(obstacles);
-        let obstacleAvoidance = new THREE.Vector3(0, 0, 0);
-        let shouldFlyOver = false;
-        
-        // IMPORTANT: Define currentObstacle outside the if block so it's available later
-        let currentObstacle = null;
-        
-        // If obstacle detected, calculate avoidance vector
-        if (intersects.length > 0) {
-            currentObstacle = intersects[0].object;
-            const distToObstacle = intersects[0].distance;
-            
-            // Decide whether to fly over or around based on distance and building height
-            const buildingHeight = currentObstacle.userData.height;
-            const distanceRatio = distToObstacle / 50; // Normalized distance (0-1)
-            
-            // Decide avoidance strategy based on building properties and distance
-            if (buildingHeight > 80 || distToObstacle < 20) {
-                // For tall buildings or close obstacles, fly over
-                shouldFlyOver = true;
-                
-                // Calculate vertical avoidance (higher for taller buildings)
-                const verticalOffset = Math.max(20, buildingHeight * 0.7);
-                obstacleAvoidance.y = verticalOffset * (1 - distanceRatio);
-            } else {
-                // For shorter/farther buildings, steer around
-                // Get vector from obstacle to missile
-                const obstacleDir = enemy.position.clone().sub(currentObstacle.position).normalize();
-                
-                // Project onto horizontal plane for sideways avoidance
-                obstacleDir.y = 0;
-                obstacleDir.normalize();
-                
-                // Scale avoidance based on distance (stronger when closer)
-                const avoidanceStrength = 1 / (distanceRatio + 0.1);
-                obstacleAvoidance.copy(obstacleDir).multiplyScalar(avoidanceStrength);
-            }
-        }
-        
-        // ENHANCED: Add target approach behavior
-        let approachVector = new THREE.Vector3();
-        const distToTarget = enemy.position.distanceTo(targetPos);
-        
-        // If we're getting close to the target
-        if (distToTarget < 100) {
-            // Calculate approach vector - dive toward target if we're above it
-            if (enemy.position.y > target.position.y + 20) {
-                // Sharp descent toward target
-                approachVector.copy(dirToTarget).multiplyScalar(2);
-            } else {
-                // Normal approach
-                approachVector.copy(dirToTarget);
-            }
-        } else {
-            // Far from target - continue on path
-            approachVector.copy(dirToTarget);
-        }
-        
-        // Combine vectors for final direction
-        let finalDirection = new THREE.Vector3();
-        
-        // FIXED: Only try to access currentObstacle if it exists
-        if (shouldFlyOver && currentObstacle !== null) {
-            // When flying over, prioritize gaining altitude first
-            if (enemy.position.y < currentObstacle.position.y + currentObstacle.userData.height + 20) {
-                // Need more height - strong upward component
-                finalDirection.set(
-                    dirToTarget.x * 0.3,
-                    0.7, // Strong upward bias
-                    dirToTarget.z * 0.3
-                ).normalize();
-            } else {
-                // Enough height - can move toward target with downward angle
-                finalDirection.copy(dirToTarget).normalize();
-            }
-        } else {
-            // Normal steering with obstacle avoidance
-            finalDirection.copy(dirToTarget)
-                .add(obstacleAvoidance.multiplyScalar(1.5))
-                .add(approachVector)
-                .normalize();
-        }
-        
-        // Update missile direction with smoothing
-        enemy.userData.direction.lerp(finalDirection, 0.07);
-        enemy.userData.direction.normalize();
-        
-        // Update rotation to match direction
-        const enemyQuat = new THREE.Quaternion().setFromUnitVectors(
-            new THREE.Vector3(0, 1, 0), 
-            enemy.userData.direction
-        );
-        enemy.quaternion.copy(enemyQuat);
-        
-        // Check for collisions with terrain or buildings
-        if (enemy.position.y < 1) {
-            handleEnemyMissileImpact(enemy, i);
-            continue;
-        }
-        
-        // Check for collisions with buildings
-        checkEnemyMissileCollisions(enemy, i);
-    }
-    
-    // Spawn new enemy missiles if needed
-    enemyMissileTimer -= delta;
-    if (enemyMissileTimer <= 0 && enemyMissiles.length < maxEnemyMissiles && gameActive) {
+    // Spawn new enemy missiles if we're under the limit
+    if (enemyMissileTimer > enemyMissileSpawnRate && enemyMissiles.length < maxEnemyMissiles && gameActive) {
+        enemyMissileTimer = 0;
         createEnemyMissile();
-        enemyMissileTimer = enemyMissileSpawnRate;
-    }
-}
-
-function assignNewTargetToEnemyMissile(enemy) {
-    // Early exit if no targets remain
-    if (targetBuildings.length === 0) {
-        return false;
     }
     
-    // Calculate distances of all targets from the missile's position
-    const targetsWithDistance = targetBuildings.map(target => {
-        const distToTarget = enemy.position.distanceTo(target.position);
-        return { target, distToTarget };
-    });
+    // Reuse the same raycaster for all missiles
+    const raycaster = new THREE.Raycaster();
     
-    // Sort by distance from missile (ascending - closest first)
-    targetsWithDistance.sort((a, b) => a.distToTarget - b.distToTarget);
-    
-    // Add some randomness - pick from the closest 40% of targets
-    // This ensures missiles still have some variety in targeting
-    const closerTargetsCount = Math.max(1, Math.floor(targetsWithDistance.length * 0.4));
-    const closerTargets = targetsWithDistance.slice(0, closerTargetsCount);
-    const randomIndex = Math.floor(Math.random() * closerTargets.length);
-    
-    // Assign this target to the missile
-    enemy.userData.targetBuilding = closerTargets[randomIndex].target;
-    
-    // Adjust height based on target position and surrounding buildings
-    adjustEnemyApproachHeight(enemy);
-    
-    return true;
-}
+    // Update existing enemy missiles
+    for (let i = enemyMissiles.length - 1; i >= 0; i--) {
+        const enemyMissile = enemyMissiles[i];
+        if (!enemyMissile) continue;
+        
+        // Update pathfinding timer
+        if (enemyMissile.userData.useAdvancedNavigation) {
+            enemyMissile.userData.pathfindingTimer -= delta;
+            
+            // Update navigation if timer expired
+            if (enemyMissile.userData.pathfindingTimer <= 0) {
+                enemyMissile.userData.pathfindingTimer = pathfindingUpdateRate;
+                updateMissileNavigation(enemyMissile, raycaster);
+            }
+        }
+        
+        // Get current direction based on navigation state
+        let currentDirection = enemyMissile.userData.direction.clone();
 
-
-
-// Adjust enemy missile height based on path to target
-function adjustEnemyApproachHeight(enemy) {
-    const target = enemy.userData.targetBuilding;
-    if (!target) return;
-    
-    // Get distance to target
-    const distToTarget = enemy.position.distanceTo(target.position);
-    
-    // Sample points along path to target to find max building height
-    let maxHeightOnPath = 0;
-    const steps = 8;
-    const dirToTarget = target.position.clone().sub(enemy.position).normalize();
-    
-    for (let i = 1; i < steps; i++) {
-        const t = i / steps;
-        const samplePos = enemy.position.clone().add(
-            dirToTarget.clone().multiplyScalar(t * distToTarget)
+        // Apply state-specific behavior
+        switch (enemyMissile.userData.navigationState) {
+            case 'climbing':
+                // Gradually blend upward vector with forward vector
+                currentDirection.y = Math.min(currentDirection.y + 0.05, 0.8);
+                currentDirection.normalize();
+                break;
+                
+            case 'diving':
+                // Gradually blend downward vector with forward vector
+                currentDirection.y = Math.max(currentDirection.y - 0.05, -0.8);
+                currentDirection.normalize();
+                break;
+                
+            case 'weaving':
+                // Apply weave if we have an avoidance vector
+                if (enemyMissile.userData.obstacleAvoidanceVector) {
+                    // Blend current direction with avoidance vector
+                    currentDirection.lerp(
+                        enemyMissile.userData.obstacleAvoidanceVector,
+                        0.1 * enemyMissile.userData.pilotSkillLevel
+                    ).normalize();
+                }
+                break;
+                
+            case 'direct':
+            default:
+                // If we're in direct mode but above target, start to dive
+                if (enemyMissile.position.y > enemyMissile.userData.targetPosition.y + 50) {
+                    // Calculate direction to target
+                    const toTarget = new THREE.Vector3().subVectors(
+                        enemyMissile.userData.targetPosition,
+                        enemyMissile.position
+                    ).normalize();
+                    
+                    // Blend with some downward vector
+                    currentDirection.lerp(toTarget, 0.05).normalize();
+                }
+                break;
+        }
+        
+        // Always update the stored direction
+        enemyMissile.userData.direction = currentDirection;
+        
+        // Align missile with direction
+        const missileRotation = new THREE.Quaternion().setFromUnitVectors(
+            new THREE.Vector3(0, 1, 0), 
+            currentDirection
+        );
+        enemyMissile.quaternion.copy(missileRotation);
+        
+        // Update position based on direction and speed
+        const speed = enemyMissile.userData.speed * delta;
+        enemyMissile.position.add(
+            currentDirection.clone().multiplyScalar(speed)
         );
         
-        // Find buildings near this sample point
-        for (const building of buildings) {
-            const buildingDist = samplePos.distanceTo(
-                new THREE.Vector3(building.position.x, samplePos.y, building.position.z)
+        // Rest of the existing enemy missile update code
+        // (collision detection, smoke generation, etc.)
+        
+        // Update lifetime if defined
+        if (enemyMissile.userData.lifetime !== undefined) {
+            enemyMissile.userData.lifetime -= delta;
+            
+            // Remove if lifetime expired
+            if (enemyMissile.userData.lifetime <= 0) {
+                // Create explosion at current position
+                createExplosion(enemyMissile.position.clone(), true);
+                
+                // Remove from scene and array
+                scene.remove(enemyMissile);
+                disposeObject(enemyMissile);
+                enemyMissiles.splice(i, 1);
+                continue;
+            }
+        }
+        
+        // Check ground collision
+        if (enemyMissile.position.y < 0.5) {
+            // Create explosion at impact
+            createExplosion(enemyMissile.position.clone(), true);
+            createScorchMark(enemyMissile.position.clone());
+            
+            // Remove missile
+            scene.remove(enemyMissile);
+            disposeObject(enemyMissile);
+            enemyMissiles.splice(i, 1);
+            continue;
+        }
+        
+        // Check building collisions
+        let buildingCollision = false;
+        for (let j = 0; j < buildings.length; j++) {
+            const building = buildings[j];
+            const buildingHalfWidth = building.userData.width / 2;
+            const buildingHeight = building.userData.height;
+            
+            // Simple box collision check
+            if (enemyMissile.position.x > building.position.x - buildingHalfWidth &&
+                enemyMissile.position.x < building.position.x + buildingHalfWidth &&
+                enemyMissile.position.z > building.position.z - buildingHalfWidth &&
+                enemyMissile.position.z < building.position.z + buildingHalfWidth &&
+                enemyMissile.position.y < building.position.y + buildingHeight &&
+                enemyMissile.position.y > building.position.y) {
+                
+                // Set collision flag
+                buildingCollision = true;
+                
+                // Create explosion at impact point
+                const impactPoint = new THREE.Vector3(
+                    enemyMissile.position.x,
+                    enemyMissile.position.y,
+                    enemyMissile.position.z
+                );
+                createExplosion(impactPoint, true, false);
+                
+                // If it's a target building, destroy it using the dedicated handler function
+                if (building.userData.isTarget) {
+                    // Use the specific handler for enemy target hits to ensure proper effects
+                    handleEnemyTargetHit(building);
+                    
+                    // Update pilot stats for the enemy that hit the target
+                    if (enemyMissile.userData.pilotId) {
+                        const pilot = enemyPilotStats.find(p => p.id === enemyMissile.userData.pilotId);
+                        if (pilot) {
+                            pilot.targetsDestroyed++;
+                            updateEnemyPilotStats(pilot);
+                        }
+                    }
+                } else {
+                    // Regular building - just add damage for smoke effects
+                    addBuildingDamage(building);
+                }
+                
+                break; // Stop checking other buildings
+            }
+        }
+        
+        // Remove missile if it collided with a building
+        if (buildingCollision) {
+            scene.remove(enemyMissile);
+            disposeObject(enemyMissile);
+            enemyMissiles.splice(i, 1);
+            continue;
+        }
+        
+        // Check collision with player missile
+        if (missile.visible && missile.position.distanceTo(enemyMissile.position) < 3) {
+            // Create explosion at impact
+            createExplosion(enemyMissile.position.clone(), true);
+            
+            // Remove enemy missile
+            scene.remove(enemyMissile);
+            disposeObject(enemyMissile);
+            enemyMissiles.splice(i, 1);
+            
+            // Damage player missile but don't destroy it
+            screenShakeTime = 1.0;
+            screenShakeIntensity = 1.0;
+            playSound('explosion');
+        }
+        
+        // Create smoke trail
+        enemyMissile.userData.smokeTimer -= delta;
+        if (enemyMissile.userData.smokeTimer <= 0) {
+            enemyMissile.userData.smokeTimer = 0.05; // Emit smoke every 50ms
+            createEnemyMissileSmoke(enemyMissile);
+        }
+    }
+}
+
+// New function to handle advanced navigation for enemy missiles
+function updateMissileNavigation(enemyMissile, raycaster) {
+    if (!enemyMissile.userData) return;
+    
+    // NEW: Apply appropriate speed modifier based on navigation state
+    const speedModifiers = enemyMissile.userData.speedModifiers || { direct: 1.0, climbing: 0.9, diving: 1.3, weaving: 1.1 };
+    const navState = enemyMissile.userData.navigationState || 'direct';
+    enemyMissile.userData.speed = (enemyMissile.userData.baseSpeed || 1.0) * (speedModifiers[navState] || 1.0);
+    
+    // Close to target - switch to direct aggressive approach
+    const distanceToTarget = enemyMissile.position.distanceTo(enemyMissile.userData.targetPosition);
+    if (distanceToTarget < 50) { // Increased from 30 to be more aggressive earlier
+        enemyMissile.userData.navigationState = 'direct';
+        
+        if (distanceToTarget < 30 && enemyMissile.position.y > enemyMissile.userData.targetPosition.y + 15) {
+            // Close and above target - dive attack!
+            enemyMissile.userData.navigationState = 'diving';
+            
+            // Calculate steeper diving angle
+            const toTarget = new THREE.Vector3().subVectors(
+                enemyMissile.userData.targetPosition,
+                enemyMissile.position
+            ).normalize();
+            
+            // More aggressive dive angle based on skill
+            const diveIntensity = 0.3 + (enemyMissile.userData.pilotSkillLevel * 0.3);
+            enemyMissile.userData.direction.lerp(toTarget, diveIntensity).normalize();
+        } else {
+            // Direct approach with higher responsiveness
+            const toTarget = new THREE.Vector3().subVectors(
+                enemyMissile.userData.targetPosition,
+                enemyMissile.position
+            ).normalize();
+            
+            // CHANGED: More responsive turning based on skill
+            const turnRate = 0.2 + (enemyMissile.userData.pilotSkillLevel * 0.2); // 0.2-0.4
+            enemyMissile.userData.direction.lerp(toTarget, turnRate).normalize();
+        }
+        return;
+    }
+    
+    // Set up raycaster with longer distance for earlier obstacle detection
+    raycaster.set(
+        enemyMissile.position.clone(),
+        enemyMissile.userData.direction.clone()
+    );
+    raycaster.far = obstacleCheckDistance * 1.5; // Look further ahead
+    
+    // Check for intersections with buildings
+    const intersects = raycaster.intersectObjects(buildings);
+    
+    if (intersects.length > 0) {
+        // Obstacle detected!
+        const obstacleDistance = intersects[0].distance;
+        const obstacleHeight = intersects[0].object.position.y + intersects[0].object.userData.height;
+        const currentAltitude = enemyMissile.position.y;
+        
+        // IMPROVED: More intelligent obstacle avoidance strategy
+        // Get missile skill and approach preference
+        const isAggressive = enemyMissile.userData.isAggressive;
+        const skillLevel = enemyMissile.userData.pilotSkillLevel;
+        const preferHighAltitude = enemyMissile.userData.preferHighAltitude;
+        
+        // Check for easy over-the-top path
+        const canClimbOver = currentAltitude + 30 > obstacleHeight || obstacleHeight < 80;
+        
+        // Check if we're high enough to simply dive
+        const isHighEnough = currentAltitude > obstacleHeight + 40;
+        
+        // Aggressive missiles try to dive or weave more often
+        if (isHighEnough && (isAggressive || Math.random() < 0.7)) {
+            // We're high enough to dive over/through
+            enemyMissile.userData.navigationState = 'diving';
+            
+            // Calculate more aggressive diving angle
+            const toTarget = new THREE.Vector3().subVectors(
+                enemyMissile.userData.targetPosition,
+                enemyMissile.position
+            ).normalize();
+            
+            // Aggressive missiles dive more directly
+            const diveRate = isAggressive ? 0.3 : 0.2;
+            enemyMissile.userData.direction.lerp(toTarget, diveRate).normalize();
+        }
+        // High-preference missiles or if obstacle is tall, climb
+        else if (preferHighAltitude || !canClimbOver || Math.random() < 0.4) {
+            // Choose climbing strategy
+            enemyMissile.userData.navigationState = 'climbing';
+            
+            // More aggressive climb rate based on skill and obstacle height
+            const heightNeeded = Math.max(20, obstacleHeight - currentAltitude + 30);
+            const climbFactor = Math.min(0.8, heightNeeded / 100);
+            
+            // Update direction with more vertical component
+            enemyMissile.userData.direction.y = Math.min(
+                enemyMissile.userData.direction.y + climbFactor,
+                0.9
+            );
+            enemyMissile.userData.direction.normalize();
+        }
+        else {
+            // Choose weaving strategy with more intelligent vector calculation
+            enemyMissile.userData.navigationState = 'weaving';
+            
+            // Get obstacle position and calculate better avoidance vector
+            const obstaclePos = intersects[0].object.position.clone();
+            
+            // Calculate distance to obstacle center in xz plane
+            const missilePos2D = new THREE.Vector2(enemyMissile.position.x, enemyMissile.position.z);
+            const obstaclePos2D = new THREE.Vector2(obstaclePos.x, obstaclePos.z);
+            const dist2D = missilePos2D.distanceTo(obstaclePos2D);
+            
+            // Determine if we should go left/right based on target position
+            const targetPos2D = new THREE.Vector2(
+                enemyMissile.userData.targetPosition.x,
+                enemyMissile.userData.targetPosition.z
             );
             
-            if (buildingDist < building.userData.width * 1.2 && 
-                building.position.y + building.userData.height > maxHeightOnPath) {
-                maxHeightOnPath = building.position.y + building.userData.height;
-            }
+            // Calculate vectors to determine optimal direction
+            const vecToObstacle = new THREE.Vector2().subVectors(obstaclePos2D, missilePos2D).normalize();
+            const vecToTarget = new THREE.Vector2().subVectors(targetPos2D, missilePos2D).normalize();
+            
+            // Cross product in 2D to determine which side of obstacle target is on
+            const cross2D = vecToObstacle.x * vecToTarget.y - vecToObstacle.y * vecToTarget.x;
+            
+            // Choose direction based on cross product and add randomness for unpredictability
+            enemyMissile.userData.weaveDirection = (cross2D > 0) ? 1 : -1;
+            if (Math.random() < 0.2) enemyMissile.userData.weaveDirection *= -1; // 20% chance to do the opposite
+            
+            // Create perpendicular vector for weaving
+            const missileToObstacle = obstaclePos.sub(enemyMissile.position).normalize();
+            const weaveVector = new THREE.Vector3();
+            weaveVector.crossVectors(missileToObstacle, new THREE.Vector3(0, 1, 0))
+                .normalize()
+                .multiplyScalar(enemyMissile.userData.weaveDirection);
+                
+            // Add slight upward component to avoid terrain
+            weaveVector.y = 0.3; // More upward component (was 0.2)
+            weaveVector.normalize();
+            
+            // Store avoidance vector
+            enemyMissile.userData.obstacleAvoidanceVector = weaveVector;
+            
+            // More aggressive pilots weave more sharply
+            const weaveSharpness = 0.15 + (skillLevel * 0.15); // 0.15-0.3
+            enemyMissile.userData.direction.lerp(weaveVector, weaveSharpness).normalize();
         }
     }
-    
-    // Set initial approach height based on path obstacles
-    const approachHeight = Math.max(80, maxHeightOnPath + 20);
-    enemy.position.y = Math.max(enemy.position.y, approachHeight);
+    else {
+        // No obstacles ahead - optimize path
+        
+        // If we're weaving, occasionally switch weave direction or return to direct
+        if (enemyMissile.userData.navigationState === 'weaving') {
+            if (Math.random() < 0.15) { // Increased from 0.1
+                enemyMissile.userData.weaveDirection *= -1;
+            }
+            
+            if (Math.random() < 0.2) { // 20% chance to return to direct after successful weave
+                enemyMissile.userData.navigationState = 'direct';
+            }
+        }
+        
+        // If we're climbing and reached target altitude, return to direct
+        if (enemyMissile.userData.navigationState === 'climbing' && 
+            enemyMissile.position.y >= enemyMissile.userData.idealAltitude) {
+            enemyMissile.userData.navigationState = 'direct';
+        }
+        
+        // If we're diving and reached target altitude, return to direct
+        if (enemyMissile.userData.navigationState === 'diving' && 
+            enemyMissile.position.y <= enemyMissile.userData.targetPosition.y + 20) {
+            enemyMissile.userData.navigationState = 'direct';
+        }
+        
+        // Periodically adjust course toward target
+        if (Math.random() < 0.2) { // Increased from 0.1
+            // Calculate direction to target
+            const toTarget = new THREE.Vector3().subVectors(
+                enemyMissile.userData.targetPosition,
+                enemyMissile.position
+            ).normalize();
+            
+            // More aggressive course correction based on skill and state
+            const correctionRate = enemyMissile.userData.isAggressive ? 
+                0.2 + (enemyMissile.userData.pilotSkillLevel * 0.2) : // 0.2-0.4 for aggressive
+                0.1 + (enemyMissile.userData.pilotSkillLevel * 0.1);  // 0.1-0.2 for cautious
+                
+            // Gradually adjust direction toward target
+            enemyMissile.userData.direction.lerp(toTarget, correctionRate).normalize();
+        }
+    }
 }
 
+function updatePortalMaterials(delta = 0.016) {
+    if (!window.portalRings) return;
+    
+    for (const portal of window.portalRings) {
+        if (portal.material && portal.material.uniforms && portal.material.uniforms.time) {
+            portal.material.uniforms.time.value += delta;
+        }
+    }
+}
 
 // Add adaptive resolution during intense action
 function adjustResolutionForPerformance() {
@@ -5633,205 +6605,184 @@ function adjustResolutionForPerformance() {
     }
 }
 
-// Check collisions for enemy missiles
-function checkEnemyMissileCollisions(enemyMissile, index) {
-    if (!enemyMissile) return false;
-    
-    // Check ground collision
-    if (enemyMissile.position.y < 0.8) {
-        // Create explosion at impact point
-        createExplosion(enemyMissile.position.clone(), false, true);
-        playEnemyExplosionSound();
-        
-        // Record the crash to the pilot's stats if possible
-        if (enemyMissile.userData && enemyMissile.userData.pilotId) {
-            const pilot = enemyPilotStats.find(p => p.id === enemyMissile.userData.pilotId);
-            if (pilot) {
-                pilot.crashes++;
-            }
-        }
-        
-        // Remove missile
-        scene.remove(enemyMissile);
-        enemyMissiles.splice(index, 1);
-        return true;
+function initializeSettingsPanel() {
+    // Remove existing mute button since we'll move it to settings
+    const existingMuteBtn = document.querySelector('button[innerHTML="🔊"], button[innerHTML="🔇"]');
+    if (existingMuteBtn) {
+        existingMuteBtn.remove();
     }
     
-    // Check building collisions
-    for (let i = 0; i < buildings.length; i++) {
-        const building = buildings[i];
+    // Create settings button - MOVED HIGHER UP
+    const settingsBtn = document.createElement('button');
+    settingsBtn.id = 'settingsBtn';
+    settingsBtn.innerHTML = '⚙️';
+    settingsBtn.style.position = 'absolute';
+    settingsBtn.style.bottom = '80px'; // Moved up from 20px
+    settingsBtn.style.right = '20px';
+    settingsBtn.style.padding = '10px';
+    settingsBtn.style.background = 'rgba(0,0,0,0.7)';
+    settingsBtn.style.color = 'white';
+    settingsBtn.style.border = '1px solid #444';
+    settingsBtn.style.borderRadius = '5px';
+    settingsBtn.style.cursor = 'pointer';
+    settingsBtn.style.zIndex = '1002';
+    settingsBtn.style.fontSize = '24px';
+    settingsBtn.style.width = '50px';
+    settingsBtn.style.height = '50px';
+    settingsBtn.style.display = 'flex';
+    settingsBtn.style.justifyContent = 'center';
+    settingsBtn.style.alignItems = 'center';
+    document.body.appendChild(settingsBtn);
+    
+    // Create settings panel (hidden completely off-screen initially)
+    const settingsPanel = document.createElement('div');
+    settingsPanel.id = 'settingsPanel';
+    settingsPanel.style.position = 'absolute';
+    settingsPanel.style.bottom = '-500px'; // Ensure completely hidden
+    settingsPanel.style.right = '20px';
+    settingsPanel.style.width = '300px';
+    settingsPanel.style.padding = '20px';
+    settingsPanel.style.background = 'rgba(0,0,0,0.85)';
+    settingsPanel.style.color = 'white';
+    settingsPanel.style.border = '1px solid #ff3333';
+    settingsPanel.style.borderRadius = '5px';
+    settingsPanel.style.zIndex = '1001';
+    settingsPanel.style.transition = 'bottom 0.3s ease-in-out';
+    settingsPanel.style.fontFamily = 'Quantico, sans-serif';
+    settingsPanel.style.boxShadow = '0 0 20px rgba(255, 0, 0, 0.3)';
+    
+    // Add panel content - removed title, larger name field
+    settingsPanel.innerHTML = `
+        <div style="margin-bottom: 20px;">
+            <label for="playerNameInput" style="display: block; margin-bottom: 8px; font-size: 16px;">PILOT NAME:</label>
+            <input type="text" id="playerNameInput" maxlength="15" 
+                style="width: 100%; padding: 12px; background: #222; color: white; 
+                border: 1px solid #444; border-radius: 4px; font-size: 18px;">
+        </div>
         
-        // Simple collision detection with bounding box
-        const distX = Math.abs(enemyMissile.position.x - building.position.x);
-        const distZ = Math.abs(enemyMissile.position.z - building.position.z);
+        <div style="margin-bottom: 20px;">
+            <label style="display: block; margin-bottom: 8px; font-size: 16px;">MISSILE COLOR:</label>
+            <div id="settingsColorButtons" style="display: flex; flex-wrap: wrap; gap: 8px;"></div>
+        </div>
         
-        const buildingHalfWidth = building.userData.width / 2;
-        const buildingHeight = building.userData.height;
-        
-        // Check if within building bounds
-        if (distX < buildingHalfWidth + 1 && 
-            distZ < buildingHalfWidth + 1 && 
-            enemyMissile.position.y < buildingHeight) {
-            
-            // Create explosion at impact point
-              // Create explosion at impact point
-              createExplosion(enemyMissile.position.clone(), false, true);
-            playEnemyExplosionSound();
-            
-            // CRITICAL FIX: If it's a target building, register the kill for the pilot
-            if (building.userData && building.userData.isTarget === true) {
-                console.log("Enemy missile hit a target building!");
-                
-                // Find which pilot fired this missile
-                if (enemyMissile.userData && enemyMissile.userData.pilotId) {
-                    const pilotId = enemyMissile.userData.pilotId;
-                    
-                    // Find the pilot in the stats array
-                    for (let j = 0; j < enemyPilotStats.length; j++) {
-                        if (enemyPilotStats[j].id === pilotId) {
-                            console.log(`Pilot ${enemyPilotStats[j].name} (${pilotId}) scored a hit!`);
-                            
-                            // Increment their kills and immediately log the new value
-                            enemyPilotStats[j].targetsDestroyed++;
-                            console.log(`${enemyPilotStats[j].name} now has ${enemyPilotStats[j].targetsDestroyed} kills`);
-                            
-                            // Force immediate leaderboard update
-                            setTimeout(updateLeaderboard, 0);
-                            break;
-                        }
-                    }
-                }
-                
-                // Remove target from scene and arrays
-                scene.remove(building);
-                const targetIndex = buildings.indexOf(building);
-                if (targetIndex > -1) {
-                    buildings.splice(targetIndex, 1);
-                }
-                
-                const targetBuildingIndex = targetBuildings.indexOf(building);
-                if (targetBuildingIndex > -1) {
-                    targetBuildings.splice(targetBuildingIndex, 1);
-                }
-                
-                // Update stats
-                stats.targetsRemaining--;
-                stats.targetsDestroyed++;
-                
-                // Create scorch mark
-                const scorchPosition = new THREE.Vector3(building.position.x, -0.3, building.position.z);
-                createScorchMark(scorchPosition, false);
-                
-                // Check if all targets are destroyed
-                if (stats.targetsRemaining <= 0) {
-                    setTimeout(() => {
-                        showGameOver();
-                    }, 3000);
-                }
-            } else {
-                // Record crash to the pilot's stats if possible
-                if (enemyMissile.userData && enemyMissile.userData.pilotId) {
-                    const pilot = enemyPilotStats.find(p => p.id === enemyMissile.userData.pilotId);
-                    if (pilot) {
-                        pilot.crashes++;
-                    }
-                }
-            }
-            
-            // Remove missile
-            scene.remove(enemyMissile);
-            enemyMissiles.splice(index, 1);
-            return true;
+        <div style="margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
+            <label style="font-size: 16px;">SOUND:</label>
+            <button id="settingsMuteBtn" style="padding: 10px 16px; background: #333; color: white; 
+                border: none; border-radius: 4px; cursor: pointer; font-size: 18px;">🔊</button>
+        </div>
+    `;
+    document.body.appendChild(settingsPanel);
+    
+    // Set up color buttons
+    setupSettingsColorButtons();
+    
+    // Initialize with current settings
+    document.getElementById('playerNameInput').value = playerStats.name || '';
+    document.getElementById('settingsMuteBtn').innerHTML = sounds.muted ? '🔇' : '🔊';
+    
+    // Setup auto-update for name field
+    const nameInput = document.getElementById('playerNameInput');
+    nameInput.addEventListener('input', function() {
+        const newName = this.value.trim();
+        if (newName) {
+            playerStats.name = newName;
+            updatePlayerInFirebase(); // Save to Firebase immediately
+            updateLeaderboard(); // Update leaderboard display
         }
-    }
+    });
     
-    return false;
-}
-
-// Helper function to detect line-box intersection
-function lineBoxIntersection(lineStart, lineEnd, building) {
-    const bPos = building.position;
-    const halfWidth = building.userData.width / 2;
-    const halfHeight = building.userData.height / 2;
-    
-    // Define box bounds
-    const boxMin = new THREE.Vector3(
-        bPos.x - halfWidth,
-        bPos.y - halfHeight,
-        bPos.z - halfWidth
-    );
-    const boxMax = new THREE.Vector3(
-        bPos.x + halfWidth,
-        bPos.y + halfHeight,
-        bPos.z + halfWidth
-    );
-    
-    // Check if line segment intersects box
-    // Simple method: check if any point along the line is inside the box
-    const segments = 10;
-    for (let i = 0; i <= segments; i++) {
-        const point = new THREE.Vector3().lerpVectors(lineStart, lineEnd, i/segments);
-        if (point.x >= boxMin.x && point.x <= boxMax.x &&
-            point.y >= boxMin.y && point.y <= boxMax.y &&
-            point.z >= boxMin.z && point.z <= boxMax.z) {
-            return true;
-        }
-    }
-    return false;
-}
-
-// Handle enemy missile impact
-function handleEnemyMissileImpact(enemyMissile, index, building = null) {
-    // Get impact position
-    const impactPosition = enemyMissile.position.clone();
-    
-    // Get the pilot who launched this missile
-    const pilotId = enemyMissile.userData.pilotId;
-    
-    // Building collision
-    if (building) {
-        // Use the same sophisticated explosion system with smaller size (isPlayerEvent = false)
-        createExplosion(impactPosition, false, false);
-        
-        // Add building to damaged buildings so it will emit smoke
-        if (!building.userData.isTarget && !damagedBuildings.includes(building)) {
-            damagedBuildings.push(building);
-            // Create initial smoke burst from damaged building
-            for (let i = 0; i < 3; i++) {
-                createBuildingSmoke(building);
-            }
-        }
-        
-        // Handle target building if applicable
-        if (building.userData.isTarget) {
-            handleEnemyTargetHit(building);
-            
-            // Track enemy success stats with specific pilot ID
-            updateSpecificPilotStats(pilotId, true, true);
-            
-            // Show update in the console for debugging
-            console.log(`Pilot ${enemyMissile.userData.pilotName} destroyed a target!`);
+    // Set up event listeners
+    settingsBtn.addEventListener('click', () => {
+        // If panel is visible (bottom value is not negative), hide it, otherwise show it
+        if (settingsPanel.style.bottom.startsWith('-')) {
+            settingsPanel.style.bottom = '80px'; // Match with button position
         } else {
-            // Track enemy crash stats with specific pilot ID
-            updateSpecificPilotStats(pilotId, false, false);
-            console.log(`Pilot ${enemyMissile.userData.pilotName} crashed into a building.`);
+            settingsPanel.style.bottom = '-500px'; // Completely hide
         }
-    } 
-    // Ground collision - create ground scorch with smoke
-    else {
-        createExplosion(impactPosition, false, true);
-        // Track enemy crash stats with specific pilot ID
-        updateSpecificPilotStats(pilotId, false, false);
-        console.log(`Pilot ${enemyMissile.userData.pilotName} crashed into the ground.`);
-    }
+    });
     
-    // Play explosion sound with pooled audio
-    playEnemyExplosionSound();
-    
-    // Remove missile
-    scene.remove(enemyMissile);
-    enemyMissiles.splice(index, 1);
+    // Mute button
+    document.getElementById('settingsMuteBtn').addEventListener('click', () => {
+        toggleMute();
+        document.getElementById('settingsMuteBtn').innerHTML = sounds.muted ? '🔇' : '🔊';
+    });
 }
+
+// Setup color buttons in settings panel
+function setupSettingsColorButtons() {
+    const colors = [
+        // Reds
+        "#ff0000", "#ff3333", "#ff6666", "#cc0000", 
+        // Oranges/Yellows
+        "#ff8800", "#ffaa00", "#ffcc00", "#ffff00", 
+        // Greens
+        "#00cc00", "#00ff00", "#33ff33", "#66ff99", // Added one more green
+        // Blues
+        "#0000ff", "#3333ff", "#0099ff", 
+        // Purples
+        "#6600cc", "#9900ff", "#cc00ff",
+        // Pinks
+        "#ff00ff", "#ff66ff", "#ff3399",
+        // Grayscale/Special
+        "#ffffff", "#aaaaaa", "#666666", "#000000"
+    ];
+    
+    const colorButtonsContainer = document.getElementById('settingsColorButtons');
+    if (!colorButtonsContainer) return;
+    
+    // Clear any existing buttons
+    colorButtonsContainer.innerHTML = '';
+    
+    // Create color buttons
+    colors.forEach((color) => {
+        const button = document.createElement('div');
+        button.className = 'settings-color-button';
+        button.style.width = '24px';
+        button.style.height = '24px';
+        button.style.backgroundColor = color;
+        button.style.borderRadius = '4px';
+        button.style.cursor = 'pointer';
+        button.style.border = '2px solid #333';
+        button.style.transition = 'transform 0.2s, border-color 0.2s';
+        
+        // Select button if it's the current color
+        if (color === playerStats.color) {
+            button.style.border = '2px solid #ffffff';
+            button.style.boxShadow = '0 0 5px rgba(255, 255, 255, 0.8)';
+        }
+        
+        // Handle selection with immediate application
+        button.addEventListener('click', function() {
+            // Remove selection from all buttons
+            document.querySelectorAll('.settings-color-button').forEach(btn => {
+                btn.style.border = '2px solid #333';
+                btn.style.boxShadow = 'none';
+            });
+            
+            // Add selection to clicked button
+            this.style.border = '2px solid #ffffff';
+            this.style.boxShadow = '0 0 5px rgba(255, 255, 255, 0.8)';
+            
+            // Update player color immediately
+            playerStats.color = color;
+            
+            // Apply color to missile
+            if (missile && missile.children && missile.children[0]) {
+                missile.children[0].material.color.set(color);
+            }
+            updatePlayerMarkerColor();
+            
+            // Save to Firebase
+            updatePlayerInFirebase();
+            
+            // Update leaderboard
+            updateLeaderboard();
+        });
+        
+        colorButtonsContainer.appendChild(button);
+    });
+}
+
 
 // Function to update stats for a specific pilot
 function updateSpecificPilotStats(pilotId, isHit, isDestroyed) {
@@ -5872,26 +6823,44 @@ function determineRoundWinner() {
     // Create a copy of all pilots including the player
     const allPilots = [...enemyPilotStats, playerStats];
     
-    // Sort by targets destroyed (highest first)
-    allPilots.sort((a, b) => b.targetsDestroyed - a.targetsDestroyed);
+    // Filter out pilots with no kills
+    const pilotsWithKills = allPilots.filter(pilot => pilot.targetsDestroyed > 0);
     
-    // Check for a winner (highest kills)
-    const highestKills = allPilots[0].targetsDestroyed;
-    
-    // Filter to get all pilots with the highest score (could be multiple in case of a tie)
-    const winners = allPilots.filter(pilot => pilot.targetsDestroyed === highestKills);
-    
-    // If there are any winners (kills > 0)
-    if (winners.length > 0 && highestKills > 0) {
-        // Increment rounds won for all winners
-        winners.forEach(winner => {
-            winner.roundsWon += 1;
-        });
-        
-        return winners;
+    if (pilotsWithKills.length === 0) {
+        return null; // No winner (nobody got any kills)
     }
     
-    return null; // No winner (nobody got any kills)
+    // Sort by targets destroyed (highest first)
+    pilotsWithKills.sort((a, b) => b.targetsDestroyed - a.targetsDestroyed);
+    
+    // Get pilots with the highest kill count
+    const highestKills = pilotsWithKills[0].targetsDestroyed;
+    const tiedPilots = pilotsWithKills.filter(pilot => pilot.targetsDestroyed === highestKills);
+    
+    // If there's only one winner, return them
+    if (tiedPilots.length === 1) {
+        const winner = tiedPilots[0];
+        winner.roundsWon += 1;
+        return [winner];
+    }
+    
+     // Calculate round duration in seconds
+     const roundDurationInSeconds = Math.max(10, elapsedTime / 1000);
+    
+    // If there are multiple pilots tied for first place, use TPM as a tiebreaker
+    tiedPilots.sort((a, b) => {
+        // Calculate TPM using the same round duration for both pilots
+        const aTpm = a.targetsDestroyed / (roundDurationInSeconds / 60);
+        const bTpm = b.targetsDestroyed / (roundDurationInSeconds / 60);
+        return bTpm - aTpm; // Higher TPM (faster pilot) comes first
+    });
+    
+    // The winner is the fastest pilot (highest TPM)
+    const winner = tiedPilots[0];
+    winner.roundsWon += 1;
+    
+    // Return just the single fastest pilot as the winner
+    return [winner];
 }
 
 function initFlightSoundPool() {
@@ -5947,13 +6916,14 @@ function handleEnemyTargetHit(target) {
     const targetPosition = target.position.clone();
     const buildingWidth = target.userData.width;  // Get width for scorch size
     
-    // Use the same explosion function as player missiles
-    createExplosion(targetPosition, false, false);
+   // Use the same explosion function as player missiles
+   createExplosion(targetPosition, false, false);
     
     // Screen shake
     screenShakeTime = 0.6;
     screenShakeIntensity = 1.2;
     
+        
     // Remove target from scene and arrays
     scene.remove(target);
     const targetIndex = buildings.indexOf(target);
@@ -5969,8 +6939,8 @@ function handleEnemyTargetHit(target) {
         const scorchPosition = new THREE.Vector3(targetPosition.x, -0.3, targetPosition.z);
         createScorchMark(scorchPosition, false);
 
-        // Make it slightly larger than normal - THIS WAS MISSING
-        const lastScorch = scorchMarks[scorchMarks.length - 1];
+         // Make it slightly larger than normal - THIS WAS MISSING
+         const lastScorch = scorchMarks[scorchMarks.length - 1];
         if (lastScorch) {
             const scorchSize = buildingWidth * 1.2; // Slightly bigger than building base
             lastScorch.scale.set(scorchSize, scorchSize, 1);
@@ -5993,9 +6963,12 @@ function handleEnemyTargetHit(target) {
         
         // Check if all targets are destroyed
         if (stats.targetsRemaining <= 0) {
-            setTimeout(() => {
-                showGameOver();
-            }, 3000);
+        window.gameOverTriggered = true;
+        gameActive = false;
+        
+        setTimeout(() => {
+            showGameOver();
+        }, 1000);
         }
     }
 }
@@ -6027,74 +7000,18 @@ function updateDamagedBuildingsSmoke() {
         
         // Emit smoke with global timer efficiency
         if (Math.random() < 0.4) { // 40% chance per building per global interval
-            createBuildingSmoke(building);
+            // Call the correct smoke creation function
+            const smokeSource = new THREE.Vector3(
+                building.position.x + THREE.MathUtils.randFloatSpread(building.userData.width * 0.5),
+                building.position.y + building.userData.height * 0.5,
+                building.position.z + THREE.MathUtils.randFloatSpread(building.userData.width * 0.5)
+            );
+            createDamagedBuildingSmoke(smokeSource, building.userData.damageLevel);
         }
     }
 }
 
-function createBuildingSmoke(building) {
-    // Skip if we're at particle limit
-    if (smokeParticles.length > MAX_SMOKE_PARTICLES * 0.9) return;
-    
-    // Use our shared smoke texture
-    if (!window.scorchSmokeTexture) {
-        // This will be created in createDramaticScorchSmoke if needed
-        return;
-    }
-    
-    const buildingWidth = building.userData.width;
-    const buildingHeight = building.userData.height;
-    
-    // Enhanced version with billboard smoke
-    const smokeSize = THREE.MathUtils.randFloat(2.0, 3.0);
-    const smokeGeometry = new THREE.PlaneGeometry(1, 1);
-    
-    // More realistic dark smoke color
-    const darkValue = THREE.MathUtils.randFloat(0.1, 0.2);
-    const smokeMaterial = new THREE.MeshBasicMaterial({
-        map: window.scorchSmokeTexture,
-        transparent: true,
-        depthWrite: false,
-        opacity: THREE.MathUtils.randFloat(0.6, 0.8),
-        side: THREE.DoubleSide,
-        color: new THREE.Color(darkValue, darkValue, darkValue)
-    });
-    
-    const smoke = new THREE.Mesh(smokeGeometry, smokeMaterial);
-    smoke.scale.set(smokeSize, smokeSize, 1);
-    
-    // Position at top of building with variation
-    smoke.position.copy(building.position).add(
-        new THREE.Vector3(
-            THREE.MathUtils.randFloatSpread(buildingWidth * 0.6),
-            buildingHeight * 0.5,  // Emit from top of building
-            THREE.MathUtils.randFloatSpread(buildingWidth * 0.6)
-        )
-    );
-    
-    // Billboard to face camera
-    smoke.userData.isBillboard = true;
-    
-    // Smoke behavior
-    const windInfluence = 1.2; // Buildings have more wind influence
-    smoke.userData = {
-        life: THREE.MathUtils.randFloat(4, 8), // Longer life for building smoke
-        maxLife: THREE.MathUtils.randFloat(4, 8),
-        growRate: THREE.MathUtils.randFloat(1.005, 1.01),
-        velocity: new THREE.Vector3(
-            globalWindDirection.x * windInfluence + THREE.MathUtils.randFloatSpread(0.2),
-            THREE.MathUtils.randFloat(0.6, 1.0),  // Upward drift
-            globalWindDirection.z * windInfluence + THREE.MathUtils.randFloatSpread(0.2)
-        ),
-        rotationSpeed: new THREE.Vector3(0, 0, THREE.MathUtils.randFloatSpread(0.1)),
-        isBillboard: true,
-        source: building,
-        sourceType: 'building'
-    };
-    
-    scene.add(smoke);
-    smokeParticles.push(smoke);
-}
+
 
 // Create smoke for enemy missiles
 function createEnemyMissileSmoke(enemyMissile) {
@@ -6149,10 +7066,9 @@ function createLeaderboard() {
             <table class="leaderboard-table">
                 <thead>
                     <tr>
-                        <th class="rank-column">#</th>
                         <th class="name-column">NAME</th>
                         <th class="score-column">KILLS</th>
-                        <th class="wins-column">WINS</th>
+                        <th class="tpm-column">TPM</th>
                     </tr>
                 </thead>
                 <tbody id="leaderboard-entries">
@@ -6193,6 +7109,15 @@ function createLeaderboard() {
                 font-size: 14px;
             }
             
+            .leaderboard-table .player-name {
+                text-shadow: 0 0 2px #000000, 0 0 3px #000000, 0 0 4px #000000;
+                color: white !important;
+                padding: 3px 6px;
+                border-radius: 3px;
+                display: inline-block;
+                font-weight: bold;
+            }
+            
             .leaderboard-table th, .leaderboard-table td {
                 padding: 4px 6px;
                 text-align: left;
@@ -6203,13 +7128,8 @@ function createLeaderboard() {
                 color: #aaaaaa;
             }
             
-            .rank-column {
-                width: 10%;
-                text-align: center;
-            }
-            
             .name-column {
-                width: 45%;
+                width: 55%;
                 text-align: left;
             }
             
@@ -6218,7 +7138,7 @@ function createLeaderboard() {
                 text-align: center;
             }
             
-            .rate-column {
+            .tpm-column {
                 width: 25%;
                 text-align: right;
             }
@@ -6274,14 +7194,6 @@ function calculateTPM(kills, totalTimeSeconds) {
 
 // Add function to update the leaderboard
 function updateLeaderboard() {
-    console.log("Updating leaderboard:");
-    
-    // Debug print all pilots
-    enemyPilotStats.forEach(pilot => {
-        console.log(`${pilot.name}: ${pilot.targetsDestroyed} kills, ${pilot.roundsWon} wins`);
-    });
-    console.log(`Player: ${playerStats.targetsDestroyed} kills, ${playerStats.roundsWon} wins`);
-    
     // Get the leaderboard table body
     const leaderboardEntries = document.getElementById('leaderboard-entries');
     if (!leaderboardEntries) {
@@ -6289,8 +7201,29 @@ function updateLeaderboard() {
         return;
     }
     
-    // Create a fresh copy of the stats
-    const displayStats = [...enemyPilotStats, playerStats];
+    // Ensure enemy pilots exist in stats
+    if (enemyPilotStats.length === 0) {
+        initializeEnemyPilots();
+    }
+    
+    // Create a fresh copy of the stats - include real player AND enemy pilots
+    let displayStats = [...enemyPilotStats, playerStats];
+    
+    // Add other human players to the leaderboard
+    if (otherPlayers) {
+        Object.values(otherPlayers).forEach(player => {
+            // Only add if we have necessary stats information
+            if (player.name) {
+                displayStats.push({
+                    id: player.id,
+                    name: player.name,
+                    targetsDestroyed: player.targetsDestroyed || 0,
+                    tpm: player.tpm || 0,
+                    color: player.color || '#ffffff'
+                });
+            }
+        });
+    }
     
     // Sort by kills (highest first)
     displayStats.sort((a, b) => b.targetsDestroyed - a.targetsDestroyed);
@@ -6298,13 +7231,20 @@ function updateLeaderboard() {
     // Generate HTML
     let html = '';
     displayStats.forEach((pilot, index) => {
+        // Determine if this is the current player
         const isPlayer = pilot.id === playerStats.id;
+        
+        // Format the pilot name with player color
+        const pilotNameSpan = `<span class="player-name" style="background-color: ${pilot.color || '#ffffff'}">${pilot.name || 'Unknown'}</span>`;
+        
+        // Format the TPM value with one decimal place
+        const tpmFormatted = (pilot.tpm || 0).toFixed(1);
+        
         html += `
             <tr class="${isPlayer ? 'player-entry' : ''}" id="${isPlayer ? 'player-' + pilot.id : ''}">
-                <td class="rank-column">${index + 1}</td>
-                <td class="name-column" style="color: ${pilot.color || '#ffffff'}">${pilot.name}</td>
+                <td class="name-column">${pilotNameSpan}</td>
                 <td class="score-column">${pilot.targetsDestroyed}</td>
-                <td class="wins-column">${pilot.roundsWon || 0}</td>
+                <td class="tpm-column">${tpmFormatted}</td>
             </tr>
         `;
     });
@@ -6324,7 +7264,25 @@ function syncPlayerStatsToFirebase() {
 }
 
 // Update function for enemy pilot stats
-function updateEnemyPilotStats(isHit, isDestroyed) {
+function updateEnemyPilotStats(pilotOrIsHit, isDestroyed) {
+    // Case 1: Called with a pilot object (from enemy missile hit)
+    if (typeof pilotOrIsHit === 'object' && pilotOrIsHit !== null) {
+        const pilot = pilotOrIsHit;
+        
+        // We don't need to increment targetsDestroyed here because it's already
+        // incremented in updateEnemyMissiles before calling this function
+        
+        // Update their rate
+        pilot.tpm = calculateTPM(pilot.targetsDestroyed, pilot.totalPlayTimeSeconds || 1);
+        
+        // Update the leaderboard
+        updateLeaderboard();
+        return;
+    }
+    
+    // Case 2: Called with boolean parameters (legacy calls)
+    const isHit = pilotOrIsHit;
+    
     if (enemyPilotStats.length === 0) return;
     
     // Pick random enemy pilot to credit
@@ -6338,7 +7296,7 @@ function updateEnemyPilotStats(isHit, isDestroyed) {
     }
     
     // Update their rate
-    pilot.tpm = calculateTPM(pilot.targetsDestroyed, pilot.totalPlayTimeSeconds);
+    pilot.tpm = calculateTPM(pilot.targetsDestroyed, pilot.totalPlayTimeSeconds || 1);
     
     // Update the leaderboard
     updateLeaderboard();
@@ -6414,103 +7372,103 @@ function updatePhysics(timeStep) {
     }
 }
 
-function initParticlePools() {
-    initGeometryPool();
-    
-    // Pre-create some particles for each pool
-    for (let i = 0; i < 20; i++) {
-        // Smoke particles
-        const smokeGeom = window.geometryPool.plane.clone();
-        const smokeMat = new THREE.MeshBasicMaterial({
-            transparent: true,
-            opacity: 0,
-            depthWrite: false,
-            side: THREE.DoubleSide
-        });
-        const smoke = new THREE.Mesh(smokeGeom, smokeMat);
-        smoke.visible = false;
-        window.particlePool.smoke.push(smoke);
+function checkGameEndConditions() {
+    // Only run check if game is still active and not already in game over sequence
+    if (gameActive && !window.gameOverTriggered) {
+        // Check if all targets are destroyed - use both stats AND actual target building count
+        const actualTargetsRemaining = targetBuildings.length;
         
-        // Fire particles
-        const fireGeom = window.geometryPool.plane.clone();
-        const fireMat = new THREE.MeshBasicMaterial({
-            transparent: true,
-            opacity: 0,
-            blending: THREE.AdditiveBlending,
-            depthWrite: false
-        });
-        const fire = new THREE.Mesh(fireGeom, fireMat);
-        fire.visible = false;
-        window.particlePool.fire.push(fire);
-    }
-}
-
-// Initialize geometry pool
-function initGeometryPool() {
-    window.geometryPool.plane = new THREE.PlaneGeometry(1, 1);
-    window.geometryPool.sphere = new THREE.SphereGeometry(1, 8, 8);
-    window.geometryPool.cylinder = new THREE.CylinderGeometry(1, 1, 1, 8);
-}
-
-
-
-// Get particle from pool or create new
-function getParticleFromPool(type, createFunc) {
-    if (!window.particlePool[type]) {
-        window.particlePool[type] = [];
-    }
-    
-    if (window.particlePool[type].length > 0) {
-        const particle = window.particlePool[type].pop();
-        particle.visible = true;
-        return particle;
-    }
-    
-    // Create new if pool empty
-    return createFunc();
-}
-
-// Return particle to pool
-function recycleParticle(particle, type) {
-    const MAX_POOLED_PARTICLES = 100;
-    
-    // Reset properties
-    particle.visible = false;
-    
-    // Return to pool if not too large
-    if (window.particlePool[type] && window.particlePool[type].length < MAX_POOLED_PARTICLES) {
-        window.particlePool[type].push(particle);
-    } else {
-        disposeObject(particle);
+        if (stats.targetsRemaining <= 0 || actualTargetsRemaining <= 0) {
+            console.log("Game end check: Targets destroyed! Stats:", stats.targetsRemaining, 
+                        "Actual target buildings:", actualTargetsRemaining);
+            
+            // Force targetRemaining to 0 to ensure consistency
+            stats.targetsRemaining = 0;
+            
+            // Trigger game over sequence
+            window.gameOverTriggered = true;
+            gameActive = false;
+            
+            // Hide missile if it's somehow still visible
+            if (missile && missile.visible) {
+                missile.visible = false;
+            }
+            
+            // Show game over with slight delay
+            setTimeout(() => {
+                showGameOver();
+            }, 1000);
+            
+            // Cancel any pending resets
+            if (resetDelay > 0) {
+                resetDelay = 0;
+            }
+        }
     }
 }
 
 
 function animate(currentTime) {
-    // Skip if essential components aren't ready
-    if (!scene || !camera || !renderer) {
-        console.warn("Essential components not initialized yet");
-        animationFrameId = requestAnimationFrame(animate);
-        return;
+    animationFrameId = requestAnimationFrame(animate);
+
+    if (gameActive) {
+        elapsedTime = Date.now() - startTime;
+    }
+        
+    // First frame initialization
+    if (!lastTime) {
+        lastTime = currentTime;
+        return; // Skip first frame to avoid huge delta
     }
     
-    // Calculate delta time
-    if (!lastTime) lastTime = currentTime;
-    const delta = Math.min((currentTime - lastTime) / 1000, 0.1); // Cap delta at 0.1
+    // Calculate delta time in seconds with upper limit to avoid large jumps
+    const rawDelta = (currentTime - lastTime) / 1000;
+    const delta = Math.min(rawDelta, 0.05); // Cap at 50ms to prevent extreme jumps
     lastTime = currentTime;
-    
-    // Update timers for throttled operations
-    minimapTimer += delta;
-    hudTimer += delta;
-    scorchMarksTimer += delta;
-    smokeTimer += delta;
-    
-    // Increment game timers
+
+    // Update all timers
+    gameTimers.leaderboard += delta;
+    gameTimers.firebaseSync += delta;
+    gameTimers.enemyPilotStats += delta;
     gameTimers.effects += delta;
     gameTimers.scorchCleanup++;
-    
-    // Update main gameplay
+
+    // Add periodic check for game end conditions
+    gameEndCheckTimer += delta;
+    if (gameEndCheckTimer >= GAME_END_CHECK_INTERVAL) {
+        checkGameEndConditions();
+        gameEndCheckTimer = 0;
+    }
+
+    // If game is active, update game elements
     if (gameActive) {
+        // Update all pilots' playtime consistently
+        const playtimeIncrement = delta; // Use actual frame time
+        updateOtherPlayers(delta);
+        updateOtherPlayerMinimapMarkers();
+
+        // Update player stats 
+        updatePlayerStats(playtimeIncrement);
+
+                
+        // Update enemy pilot stats with the same delta
+        enemyPilotStats.forEach(pilot => {
+            pilot.totalPlayTimeSeconds += playtimeIncrement;
+            pilot.tpm = calculateTPM(pilot.targetsDestroyed, pilot.totalPlayTimeSeconds);
+        });
+        
+        // Update leaderboard every 1 second
+        if (gameTimers.leaderboard >= 1.0) {
+            updateLeaderboard();
+            gameTimers.leaderboard = 0;
+        }
+        
+        // Sync to Firebase periodically
+        if (gameTimers.firebaseSync >= FIREBASE_SYNC_INTERVAL) {
+            syncPlayerStatsToFirebase();
+            gameTimers.firebaseSync = 0;
+        }
+        
         // Handle gameplay logic
         if (launchAnimation) {
             handleLaunchAnimation(delta);
@@ -6525,8 +7483,10 @@ function animate(currentTime) {
         }
     }
     
-    // Update portal shader times and explosion effects at 60fps
-    if (gameTimers.effects >= 0.016) {
+    // Update portal shader times and explosion effects
+    if (gameTimers.effects >= 0.016) { // Limit to 60fps for these operations
+        updatePortalMaterials(gameTimers.effects);
+        
         // Update shader time for explosion particles
         const shaderTime = performance.now() * 0.001;
         for (let i = 0; i < explosionParticles.length; i++) {
@@ -6535,40 +7495,20 @@ function animate(currentTime) {
                 particle.material.uniforms.time.value = shaderTime;
             }
         }
+        
         gameTimers.effects = 0;
     }
-
-    // Update particle batches if they exist
-    if (particleBatches && particleBatches.length > 0) {
-        updateParticleBatches(currentTime);
-    }
     
-    // Always update particles and enemies every frame
+    // Always update particles, HUD, missiles and minimap
     updateParticles(delta);
+    updateHUD();
     updateEnemyMissiles(delta);
+    updateMinimap();
+    updateOtherPlayers(delta);
     
-    // Throttled updates for HUD (15 fps)
-    if (hudTimer >= updateFrequency.HUD) {
-        updateHUD();
-        hudTimer = 0;
-    }
-    
-    // Throttled updates for minimap (20 fps)
-    if (minimapTimer >= updateFrequency.minimap) {
-        updateMinimap();
-        minimapTimer = 0;
-    }
-    
-    // Throttled updates for scorch marks and smoke (5-10 fps)
-    if (scorchMarksTimer >= updateFrequency.scorchMarks) {
-        updateScorchMarks(delta);
-        scorchMarksTimer = 0;
-    }
-    
-    if (smokeTimer >= updateFrequency.smoke) {
-        updateDamagedBuildingsSmoke();
-        smokeTimer = 0;
-    }
+    // Update smoke and clean up scorch marks less frequently
+    updateScorchMarks(delta);
+    updateDamagedBuildingsSmoke();
 
     updatePlayerStats(delta); // Update player stats every frame
     
@@ -6594,44 +7534,10 @@ function animate(currentTime) {
         screenShakeTime -= delta;
     }
     
-    // Request next frame
-    animationFrameId = requestAnimationFrame(animate);
-
     // Render the scene
     renderer.render(scene, camera);
 }
 
-function updateParticleBatches(currentTime) {
-    for (let i = particleBatches.length - 1; i >= 0; i--) {
-        const batch = particleBatches[i];
-        const age = currentTime - batch.birthTime;
-        
-        // Update whole batch with one operation
-        if (age > batch.lifespan) {
-            // Remove entire batch
-            if (batch.mesh && batch.mesh.parent) {
-                scene.remove(batch.mesh);
-            }
-            
-            // Dispose resources
-            if (batch.mesh) {
-                if (batch.mesh.geometry) batch.mesh.geometry.dispose();
-                if (batch.mesh.material) batch.mesh.material.dispose();
-            }
-            
-            // Remove from array
-            particleBatches.splice(i, 1);
-        } else {
-            // Update all particles in batch at once
-            if (batch.mesh && batch.mesh.material) {
-                batch.mesh.material.opacity = 1.0 - (age / batch.lifespan);
-                
-                // Optional: Add more batch-wide effects here
-                // For example, scaling the entire mesh or changing color
-            }
-        }
-    }
-}
 
 
 function handleLaunchAnimation(delta) {
